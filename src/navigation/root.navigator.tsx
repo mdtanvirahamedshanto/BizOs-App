@@ -10,19 +10,12 @@ import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import { NavigatorScreenParams } from '@react-navigation/native';
 import { useAuthStore, useHasPermission } from '@/store/auth.store';
 import { LoginScreen } from '@/features/auth/screens/LoginScreen';
+import { DashboardScreen } from '@/features/dashboard/screens/DashboardScreen';
 import { t } from '@/utils/translation';
 
 // ---------------------------------------------------------
 // Screen Placeholders
 // ---------------------------------------------------------
-function DashboardScreen() {
-  return (
-    <View className="flex-1 justify-center items-center bg-slate-50">
-      <Text className="text-lg font-bold text-primary font-sans">Dashboard Panel</Text>
-      <Text className="text-xs text-slate-500 font-sans mt-1">SME Overview and Key Metrics</Text>
-    </View>
-  );
-}
 
 function PosScreen() {
   return (
