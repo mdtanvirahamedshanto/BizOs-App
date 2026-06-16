@@ -3,16 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text } from 'react-native';
 import { useAuthStore } from '@/store/auth.store';
-
-// Placeholder screen components for structural validation
-function LoginScreen() {
-  return (
-    <View className="flex-1 justify-center items-center bg-slate-100">
-      <Text className="text-lg font-bold text-slate-800 font-sans">BizOS Mobile Authentication</Text>
-      <Text className="text-xs text-slate-500 font-sans mt-1">Please login to start cashier terminal</Text>
-    </View>
-  );
-}
+import { LoginScreen } from '@/features/auth/screens/LoginScreen';
 
 function DashboardScreen() {
   return (
