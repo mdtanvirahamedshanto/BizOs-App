@@ -1,6 +1,7 @@
 import React from 'react';
 import { ScrollView, View, Text, TouchableOpacity, RefreshControl } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import * as SQLite from 'expo-sqlite';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useDashboardMetrics } from '../hooks/use-dashboard-metrics';
 import { Card } from '@/components/ui/Card';
@@ -18,11 +19,25 @@ export function DashboardScreen() {
   const { language } = useLanguageStore();
   const isBn = language === 'bn';
 
+  const db = SQLite.useSQLiteContext();
   // State flags for mock testing. In a full device integration, NetInfo determines offline state.
   const [isOffline, setIsOffline] = React.useState(true);
-  const [pendingSyncCount, setPendingSyncCount] = React.useState(3); // Mock pending queue outbox items
+  const [pendingSyncCount, setPendingSyncCount] = React.useState(0);
 
   const { data: metrics, isLoading, error, refetch } = useDashboardMetrics(isOffline);
+
+  const loadPendingCount = React.useCallback(async () => {
+    try {
+      const row = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM sync_outbox');
+      setPendingSyncCount(row?.count ?? 0);
+    } catch (err) {
+      console.error('[Dashboard] Outbox count error:', err);
+    }
+  }, [db]);
+
+  React.useEffect(() => {
+    void loadPendingCount();
+  }, [loadPendingCount, metrics]);
 
   const formatCurrency = (cents: number) => {
     const taka = (cents / 100).toFixed(2);
