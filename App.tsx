@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { queryClient } from './src/lib/api/client';
 import { DATABASE_NAME, initializeDatabase } from './src/lib/db/sqlite';
 import { RootNavigator } from './src/navigation/root.navigator';
+import './global.css';
 
 export default function App() {
   return (
