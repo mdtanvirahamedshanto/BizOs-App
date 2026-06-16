@@ -11,29 +11,13 @@ import { NavigatorScreenParams } from '@react-navigation/native';
 import { useAuthStore, useHasPermission } from '@/store/auth.store';
 import { LoginScreen } from '@/features/auth/screens/LoginScreen';
 import { DashboardScreen } from '@/features/dashboard/screens/DashboardScreen';
+import { PosScreen } from '@/features/pos/screens/PosScreen';
+import { CashbookScreen } from '@/features/cashbook/screens/CashbookScreen';
 import { t } from '@/utils/translation';
 
 // ---------------------------------------------------------
 // Screen Placeholders
 // ---------------------------------------------------------
-
-function PosScreen() {
-  return (
-    <View className="flex-1 justify-center items-center bg-slate-50">
-      <Text className="text-lg font-bold text-slate-800 font-sans">Terminal POS</Text>
-      <Text className="text-xs text-slate-500 font-sans mt-1">Scan barcodes or add items to cart</Text>
-    </View>
-  );
-}
-
-function CashbookScreen() {
-  return (
-    <View className="flex-1 justify-center items-center bg-slate-50">
-      <Text className="text-lg font-bold text-slate-800 font-sans">Cashbook & Drawers</Text>
-      <Text className="text-xs text-slate-500 font-sans mt-1">Cash In, Out, and Daily Close</Text>
-    </View>
-  );
-}
 
 function ReportsScreen() {
   return (
