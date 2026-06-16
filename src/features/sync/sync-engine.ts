@@ -70,6 +70,23 @@ export function useSyncEngine() {
           break;
         }
 
+        case 'COLLECT_DUE': {
+          const apiPayload = {
+            accountId: payload.accountId,
+            amountCents: payload.amountCents,
+            paymentMethod: payload.paymentMethod,
+            reference: payload.reference,
+          };
+          const response = await apiClient.post('/khata/collection', apiPayload);
+          if (response.status === 201 || response.status === 200) {
+            syncSuccess = true;
+            if (payload.cashbookId) {
+              await db.runAsync('UPDATE cashbook_entries SET isSynced = 1 WHERE id = ?', [payload.cashbookId]);
+            }
+          }
+          break;
+        }
+
         default:
           console.warn(`[SyncEngine] Unrecognized event type omitted: ${item.eventType}`);
           // Remove anomalous item to unblock the outbox loop

@@ -87,6 +87,67 @@ export async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<voi
       CREATE INDEX IF NOT EXISTS idx_outbox_created ON sync_outbox(createdAt);
     `);
 
+    // 4. Seed initial mock data for demo if database is empty
+    const productCountRow = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM products');
+    if (productCountRow && productCountRow.count === 0) {
+      console.log('[SQLite] Seeding sample products...');
+      const now = Date.now();
+      await db.runAsync(
+        `INSERT INTO products (id, sku, name, stock, priceCents, lastUpdated) VALUES
+         ('prod-1', '1001', 'Miniket Rice 1kg / মিনিকেট চাল ১ কেজি', 50, 6800, ?),
+         ('prod-2', '1002', 'Aarong Liquid Milk 1L / আড়ং তরল দুধ ১ লিটার', 15, 9000, ?),
+         ('prod-3', '1003', 'Farm Eggs 1 Dozen / ফার্মের ডিম ১ ডজন', 20, 14500, ?),
+         ('prod-4', '1004', 'Rupchanda Soybean Oil 2L / রূপচাঁদা সয়াবিন তেল ২ লিটার', 8, 38000, ?),
+         ('prod-5', '1005', 'Coca-Cola 500ml / কোকা-কোলা ৫০০ মিলি', 4, 5000, ?)`,
+        [now, now, now, now, now]
+      );
+    }
+
+    const customerCountRow = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM customers');
+    if (customerCountRow && customerCountRow.count === 0) {
+      console.log('[SQLite] Seeding sample customers...');
+      await db.runAsync(`
+        INSERT INTO customers (id, name, phone, dueCents, creditLimitCents) VALUES
+        ('cust-1', 'Abul Kashem / আবুল কাশেম', '+8801700000001', 150000, 500000),
+        ('cust-2', 'Kamal Uddin / কামাল উদ্দিন', '+8801800000002', 450000, 300000),
+        ('cust-3', 'Sujon Ahmed / সুজন আহমেদ', '+8801900000003', 85000, 200000)
+      `);
+    }
+
+    const salesCountRow = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM sales');
+    if (salesCountRow && salesCountRow.count === 0) {
+      console.log('[SQLite] Seeding sample sales...');
+      const now = Date.now();
+      await db.runAsync(
+        `INSERT INTO sales (id, customerId, totalCents, taxCents, discountCents, paymentStatus, isSynced, createdAt) VALUES
+         ('sale-mock-1', NULL, 25000, 0, 0, 'PAID', 1, ?),
+         ('sale-mock-2', NULL, 42000, 0, 0, 'PAID', 1, ?)`,
+        [now - 3600000, now - 7200000]
+      );
+
+      await db.runAsync(`
+        INSERT INTO sale_items (id, saleId, productId, quantity, priceCents) VALUES
+        ('si-1', 'sale-mock-1', 'prod-1', 2, 6800),
+        ('si-2', 'sale-mock-1', 'prod-2', 1, 9000),
+        ('si-3', 'sale-mock-2', 'prod-3', 2, 14500),
+        ('si-4', 'sale-mock-2', 'prod-5', 2, 5000)
+      `);
+    }
+
+    const cashbookCountRow = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM cashbook_entries');
+    if (cashbookCountRow && cashbookCountRow.count === 0) {
+      console.log('[SQLite] Seeding sample cashbook entries...');
+      const now = Date.now();
+      await db.runAsync(
+        `INSERT INTO cashbook_entries (id, type, amountCents, description, source, reference, isSynced, createdAt) VALUES
+         ('cb-mock-1', 'IN', 1000000, 'প্রারম্ভিক ক্যাশ / Opening Balance', 'MANUAL', 'OP-001', 1, ?),
+         ('cb-mock-2', 'OUT', 120000, 'দোকান ভাড়া / Shop Rent', 'MANUAL', 'RENT-01', 1, ?),
+         ('cb-mock-3', 'IN', 25000, 'POS Sale [sale-mock-1]', 'SALE', 'sale-mock-1', 1, ?),
+         ('cb-mock-4', 'IN', 42000, 'POS Sale [sale-mock-2]', 'SALE', 'sale-mock-2', 1, ?)`,
+        [now - 86400000, now - 18000000, now - 3600000, now - 7200000]
+      );
+    }
+
     console.log('[SQLite] Database initialized successfully.');
   } catch (error) {
     console.error('[SQLite] Database initialization failed:', error);

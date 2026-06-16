@@ -13,6 +13,7 @@ import { LoginScreen } from '@/features/auth/screens/LoginScreen';
 import { DashboardScreen } from '@/features/dashboard/screens/DashboardScreen';
 import { PosScreen } from '@/features/pos/screens/PosScreen';
 import { CashbookScreen } from '@/features/cashbook/screens/CashbookScreen';
+import { KhataScreen } from '@/features/khata/screens/KhataScreen';
 import { t } from '@/utils/translation';
 
 // ---------------------------------------------------------
@@ -115,6 +116,7 @@ export type AppTabParamList = {
 
 export type AppDrawerParamList = {
   MainTabs: NavigatorScreenParams<AppTabParamList>;
+  Khata: undefined;
   Reports: undefined;
   Settings: undefined;
 };
@@ -205,6 +207,12 @@ function AppDrawerNavigator() {
         options={{ drawerLabel: t('save') === 'সেভ করুন' ? 'হোম পেজ' : 'Home' }}
       />
       
+      <Drawer.Screen
+        name="Khata"
+        component={KhataScreen}
+        options={{ drawerLabel: t('save') === 'সেভ করুন' ? 'বাকি খাতা' : 'Khata' }}
+      />
+      
       {/* Protected routes filtered dynamically via user permissions array */}
       {canReadReports && (
         <Drawer.Screen
@@ -262,6 +270,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
               Cashbook: 'cashbook',
             },
           },
+          Khata: 'khata',
           Reports: 'reports',
           Settings: 'settings',
         },
