@@ -2,7 +2,9 @@
   "compilerOptions": {
     "target": "esnext",
     "module": "commonjs",
-    "lib": ["esnext"],
+    "lib": [
+      "esnext"
+    ],
     "allowJs": true,
     "jsx": "react-native",
     "noEmit": true,
@@ -10,7 +12,9 @@
     "moduleResolution": "node",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": [
+        "src/*"
+      ]
     },
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
@@ -22,5 +26,6 @@
     "babel.config.js",
     "metro.config.js",
     ".expo"
-  ]
+  ],
+  "extends": "expo/tsconfig.base"
 }
