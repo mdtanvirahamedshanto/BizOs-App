@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
+import axios from 'axios';
 import * as SQLite from 'expo-sqlite';
 import { apiClient } from '@/lib/api/client';
+import { toBackendSalePayload } from '@/lib/api/modules/sales.api';
 import { useAuthStore } from '@/store/auth.store';
 import { useNetworkStore } from '@/lib/network/network.store';
 import { useSyncStore } from './sync.store';
+import { pullProducts } from './pull-sync';
 
 interface OutboxItem {
   id: string;
@@ -11,7 +14,21 @@ interface OutboxItem {
   payload: string;
 }
 
-const MAX_BATCH = 50;
+const MAX_BATCH = 100;
+
+/** Map mobile khata payment methods to backend payment method enum. */
+function mapKhataMethod(method: string): string {
+  switch (method) {
+    case 'CASH':
+      return 'CASH';
+    case 'BANK':
+      return 'BANK';
+    case 'MFS':
+      return 'BKASH';
+    default:
+      return 'OTHER';
+  }
+}
 
 async function countPending(db: SQLite.SQLiteDatabase): Promise<number> {
   const row = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM sync_outbox');
@@ -28,7 +45,7 @@ async function dispatch(db: SQLite.SQLiteDatabase, item: OutboxItem): Promise<bo
 
   switch (item.eventType) {
     case 'CREATE_SALE': {
-      const res = await apiClient.post('/sales', payload);
+      const res = await apiClient.post('/sales', toBackendSalePayload(payload));
       if (res.status === 200 || res.status === 201) {
         await db.runAsync('UPDATE sales SET isSynced = 1 WHERE id = ?', [payload.id]);
         return true;
@@ -36,7 +53,11 @@ async function dispatch(db: SQLite.SQLiteDatabase, item: OutboxItem): Promise<bo
       return false;
     }
     case 'CASHBOOK_IN': {
-      const res = await apiClient.post('/cashbook/cash-in', payload);
+      const res = await apiClient.post('/cashbook/cash-in', {
+        amountCents: payload.amountCents,
+        description: payload.description,
+        reference: payload.reference ?? undefined,
+      });
       if (res.status === 200 || res.status === 201) {
         await db.runAsync('UPDATE cashbook_entries SET isSynced = 1 WHERE id = ?', [payload.id]);
         return true;
@@ -44,19 +65,31 @@ async function dispatch(db: SQLite.SQLiteDatabase, item: OutboxItem): Promise<bo
       return false;
     }
     case 'CASHBOOK_OUT': {
-      const res = await apiClient.post('/cashbook/cash-out', payload);
+      const res = await apiClient.post('/cashbook/cash-out', {
+        amountCents: payload.amountCents,
+        description: payload.description,
+        reference: payload.reference ?? undefined,
+      });
       if (res.status === 200 || res.status === 201) {
         await db.runAsync('UPDATE cashbook_entries SET isSynced = 1 WHERE id = ?', [payload.id]);
         return true;
       }
       return false;
     }
+    case 'STOCK_ADJUST': {
+      const res = await apiClient.post(`/products/${payload.productId}/stock-adjustments`, {
+        type: payload.type,
+        quantity: payload.quantity,
+        notes: payload.notes ?? undefined,
+      });
+      return res.status === 200 || res.status === 201;
+    }
     case 'COLLECT_DUE': {
-      const res = await apiClient.post('/khata/collection', {
-        accountId: payload.accountId,
+      // Backend expects the khata account id in the URL.
+      const res = await apiClient.post(`/khata/accounts/${payload.accountId}/collection`, {
         amountCents: payload.amountCents,
-        paymentMethod: payload.paymentMethod,
-        reference: payload.reference,
+        method: mapKhataMethod(payload.paymentMethod),
+        reference: payload.reference ?? undefined,
       });
       if (res.status === 200 || res.status === 201) {
         if (payload.cashbookId) {
@@ -70,6 +103,18 @@ async function dispatch(db: SQLite.SQLiteDatabase, item: OutboxItem): Promise<bo
       console.warn(`[SyncEngine] Dropping unknown event type: ${item.eventType}`);
       return true; // drop to unblock queue
   }
+}
+
+/** True for permanent client errors that will never succeed on retry. */
+function isPermanentFailure(err: unknown): boolean {
+  if (axios.isAxiosError(err)) {
+    const status = err.response?.status;
+    // No response → network/timeout → transient. 401 is handled by the
+    // refresh interceptor. 4xx (validation/not-found/conflict) → permanent.
+    if (status === undefined) return false;
+    return status >= 400 && status < 500 && status !== 401 && status !== 429;
+  }
+  return false;
 }
 
 /**
@@ -100,7 +145,17 @@ export async function processOutbox(db: SQLite.SQLiteDatabase): Promise<void> {
       try {
         ok = await dispatch(db, item);
       } catch (err) {
-        // Network / server error: keep the item and stop; retry later.
+        if (isPermanentFailure(err)) {
+          // Poison message: drop it so it can't block the rest of the queue.
+          console.warn(
+            `[SyncEngine] Dropping rejected ${item.eventType} (${item.id}):`,
+            (err as Error)?.message,
+          );
+          await db.runAsync('DELETE FROM sync_outbox WHERE id = ?', [item.id]);
+          processed += 1;
+          continue;
+        }
+        // Transient (network/5xx): keep the item and stop; retry later.
         console.warn('[SyncEngine] Dispatch failed, will retry:', (err as Error)?.message);
         break;
       }
@@ -120,9 +175,23 @@ export async function processOutbox(db: SQLite.SQLiteDatabase): Promise<void> {
 }
 
 /**
+ * Full sync: push the offline outbox first (so local changes win), then pull
+ * the latest product catalog into the local cache. Used by manual "Sync Now"
+ * and on connectivity/login transitions.
+ */
+export async function syncAll(db: SQLite.SQLiteDatabase): Promise<void> {
+  await processOutbox(db);
+  try {
+    await pullProducts(db);
+  } catch (err) {
+    console.warn('[SyncEngine] Product pull failed:', (err as Error)?.message);
+  }
+}
+
+/**
  * Auto-sync controller. Mount once near the app root (inside SQLiteProvider).
- * Triggers the outbox processor whenever the device comes online or the user
- * authenticates, refreshes the pending count, and polls periodically as a
+ * Runs a full push+pull whenever the device comes online or the user
+ * authenticates, refreshes the pending count, and pushes periodically as a
  * safety net for transient failures.
  */
 export function useAutoSync(): void {
@@ -132,30 +201,26 @@ export function useAutoSync(): void {
   const setPendingCount = useSyncStore((s) => s.setPendingCount);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const run = useCallback(() => {
-    void processOutbox(db);
-  }, [db]);
-
   // Keep pending badge accurate even while offline.
   useEffect(() => {
     void countPending(db).then(setPendingCount);
   }, [db, setPendingCount]);
 
-  // React to connectivity / auth transitions.
+  // React to connectivity / auth transitions: push outbox + pull catalog.
   useEffect(() => {
     if (isOnline && isAuthenticated) {
-      run();
+      void syncAll(db);
     }
-  }, [isOnline, isAuthenticated, run]);
+  }, [isOnline, isAuthenticated, db]);
 
-  // Periodic safety-net retry while online + authenticated.
+  // Periodic safety-net retry (push only) while online + authenticated.
   useEffect(() => {
     if (!isAuthenticated) return;
     intervalRef.current = setInterval(() => {
-      if (useNetworkStore.getState().isOnline) run();
+      if (useNetworkStore.getState().isOnline) void processOutbox(db);
     }, 30000);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [isAuthenticated, run]);
+  }, [isAuthenticated, db]);
 }

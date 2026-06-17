@@ -2,8 +2,12 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { QueryClient } from '@tanstack/react-query';
 import { kvStorage, storageKeys } from '@/lib/storage/mmkv';
 
-// Backend Base URL (Configurable via environment variables or dev defaults)
-const BASE_URL = 'http://10.0.2.2:5000/api/v1'; // Standard Android Emulator localhost endpoint
+// Backend Base URL.
+// Override per-environment via `EXPO_PUBLIC_API_URL` (e.g. in .env / eas.json).
+// Default targets the Android emulator's host loopback (10.0.2.2). For a
+// physical device use your machine's LAN IP, e.g. http://192.168.0.10:5000/api/v1
+const BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL?.trim() || 'http://10.0.2.2:5000/api/v1';
 
 export const apiClient = axios.create({
   baseURL: BASE_URL,

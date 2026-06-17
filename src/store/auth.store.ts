@@ -5,7 +5,9 @@ export interface UserSession {
   id: string;
   name: string;
   email: string;
-  role: string; // e.g. 'SuperAdmin' | 'Admin' | 'Manager' | 'Staff'
+  shopId?: string;
+  /** Display role derived from permissions (backend does not return a role). */
+  role?: string;
 }
 
 interface AuthState {
@@ -37,11 +39,15 @@ export const useAuthStore = create<AuthState>((set) => ({
     kvStorage.setItem(storageKeys.REFRESH_TOKEN, refreshToken);
     kvStorage.setObject(storageKeys.USER_SESSION, user);
     kvStorage.setObject(storageKeys.USER_PERMISSIONS, permissions);
+    if (user.shopId) {
+      kvStorage.setItem(storageKeys.ACTIVE_SHOP_ID, user.shopId);
+    }
 
     set({
       isAuthenticated: true,
       user,
       permissions,
+      activeShopId: user.shopId ?? null,
     });
   },
 
@@ -67,14 +73,26 @@ export const useAuthStore = create<AuthState>((set) => ({
 }));
 
 /**
- * Custom React Hook to assert Role-Based Access Control inside screens.
- * Evaluates permission matrices or auto-authorizes SuperAdmin accounts.
+ * Returns true if the permission list grants the required permission.
+ * Owners/SuperAdmins receive a wildcard (`*` or `*:*:*`) from the backend.
+ */
+export function hasPermission(permissions: string[], requiredPermission: string): boolean {
+  if (permissions.includes('*') || permissions.includes('*:*:*')) return true;
+  if (permissions.includes(requiredPermission)) return true;
+  // Support `resource.*` wildcards (e.g. "products.*" grants "products.read").
+  const [resource] = requiredPermission.split('.');
+  if (resource && permissions.includes(`${resource}.*`)) return true;
+  return false;
+}
+
+/**
+ * Hook to assert Role-Based Access Control inside screens.
  */
 export function useHasPermission(requiredPermission: string): boolean {
-  const { user, permissions } = useAuthStore();
-  
+  const user = useAuthStore((s) => s.user);
+  const permissions = useAuthStore((s) => s.permissions);
+
   if (!user) return false;
-  if (user.role === 'SuperAdmin') return true;
-  
-  return permissions.includes(requiredPermission);
+  if (user.role === 'SuperAdmin' || user.role === 'Owner') return true;
+  return hasPermission(permissions, requiredPermission);
 }

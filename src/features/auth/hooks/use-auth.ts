@@ -16,10 +16,20 @@ export function useAuth() {
   const loginMutation = useMutation({
     mutationFn: authApi.login,
     onSuccess: (response) => {
-      const { accessToken, refreshToken, user, permissions } = response.data;
-      
+      const { user, tokens } = response.data;
+      const permissions = user.permissions ?? [];
+      const role = permissions.includes('*') || permissions.includes('*:*:*') ? 'Owner' : 'Staff';
+
+      const session: UserSession = {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        shopId: user.shopId,
+        role,
+      };
+
       // Save credentials to Zustand + MMKV
-      storeLogin(accessToken, refreshToken, user, permissions);
+      storeLogin(tokens.accessToken, tokens.refreshToken, session, permissions);
 
       // Auto-enable biometrics if supported by device hardware for subsequent quick logs
       void biometrics.isSupported().then((supported) => {

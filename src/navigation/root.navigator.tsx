@@ -9,6 +9,7 @@ import {
 import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import { NavigatorScreenParams } from '@react-navigation/native';
 import { useAuthStore, useHasPermission } from '@/store/auth.store';
+import { logoutAndRevoke } from '@/features/auth/logout';
 import { LoginScreen } from '@/features/auth/screens/LoginScreen';
 import { DashboardScreen } from '@/features/dashboard/screens/DashboardScreen';
 import { PosScreen } from '@/features/pos/screens/PosScreen';
@@ -16,13 +17,14 @@ import { CashbookScreen } from '@/features/cashbook/screens/CashbookScreen';
 import { KhataScreen } from '@/features/khata/screens/KhataScreen';
 import { ReportsScreen } from '@/features/reports/screens/ReportsScreen';
 import { SettingsScreen } from '@/features/settings/screens/SettingsScreen';
+import { InventoryScreen } from '@/features/inventory/screens/InventoryScreen';
 import { t } from '@/utils/translation';
 
 // ---------------------------------------------------------
 // Custom Side Drawer Drawer Layout
 // ---------------------------------------------------------
 function CustomDrawerContent(props: any) {
-  const { user, logout } = useAuthStore();
+  const user = useAuthStore((s) => s.user);
 
   const handleLogout = () => {
     Alert.alert(
@@ -33,7 +35,7 @@ function CustomDrawerContent(props: any) {
         {
           text: t('save') === 'সেভ করুন' ? 'হ্যাঁ, লগআউট করুন' : 'Yes, Log Out',
           style: 'destructive',
-          onPress: () => logout(),
+          onPress: () => void logoutAndRevoke(),
         },
       ]
     );
@@ -96,6 +98,7 @@ export type AppTabParamList = {
 
 export type AppDrawerParamList = {
   MainTabs: NavigatorScreenParams<AppTabParamList>;
+  Inventory: undefined;
   Khata: undefined;
   Reports: undefined;
   Settings: undefined;
@@ -155,7 +158,8 @@ function MainTabsNavigator() {
 }
 
 function AppDrawerNavigator() {
-  const canReadReports = useHasPermission('reports:read');
+  const canReadReports = useHasPermission('reports.read');
+  const canReadProducts = useHasPermission('products.read');
 
   return (
     <Drawer.Navigator
@@ -185,7 +189,15 @@ function AppDrawerNavigator() {
         component={MainTabsNavigator}
         options={{ drawerLabel: t('save') === 'সেভ করুন' ? 'হোম পেজ' : 'Home' }}
       />
-      
+
+      {canReadProducts && (
+        <Drawer.Screen
+          name="Inventory"
+          component={InventoryScreen}
+          options={{ drawerLabel: t('save') === 'সেভ করুন' ? 'ইনভেন্টরি / স্টক' : 'Inventory' }}
+        />
+      )}
+
       <Drawer.Screen
         name="Khata"
         component={KhataScreen}
@@ -247,6 +259,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
               Cashbook: 'cashbook',
             },
           },
+          Inventory: 'inventory',
           Khata: 'khata',
           Reports: 'reports',
           Settings: 'settings',

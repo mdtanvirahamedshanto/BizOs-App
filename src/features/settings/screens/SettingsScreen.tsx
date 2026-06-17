@@ -4,10 +4,11 @@ import * as SQLite from 'expo-sqlite';
 import { Card } from '@/components/ui/Card';
 import { LanguageSelector } from '@/components/ui/LanguageSelector';
 import { useAuthStore } from '@/store/auth.store';
+import { logoutAndRevoke } from '@/features/auth/logout';
 import { useLanguageStore } from '@/utils/translation';
 import { useNetworkStore } from '@/lib/network/network.store';
 import { useSyncStore } from '@/features/sync/sync.store';
-import { processOutbox } from '@/features/sync/sync-engine';
+import { syncAll } from '@/features/sync/sync-engine';
 import { biometrics } from '@/lib/auth/biometrics';
 
 const APP_VERSION = '1.0.0';
@@ -29,7 +30,6 @@ export function SettingsScreen() {
   const isBn = language === 'bn';
 
   const user = useAuthStore((s) => s.user);
-  const logout = useAuthStore((s) => s.logout);
   const isOnline = useNetworkStore((s) => s.isOnline);
   const { isSyncing, pendingCount, lastSyncAt } = useSyncStore();
 
@@ -59,7 +59,7 @@ export function SettingsScreen() {
       );
       return;
     }
-    void processOutbox(db);
+    void syncAll(db);
   };
 
   const handleLogout = () => {
@@ -68,7 +68,7 @@ export function SettingsScreen() {
       isBn ? 'আপনি কি লগআউট করতে চান?' : 'Are you sure you want to log out?',
       [
         { text: isBn ? 'বাতিল' : 'Cancel', style: 'cancel' },
-        { text: isBn ? 'লগআউট' : 'Log Out', style: 'destructive', onPress: () => logout() },
+        { text: isBn ? 'লগআউট' : 'Log Out', style: 'destructive', onPress: () => void logoutAndRevoke() },
       ]
     );
   };

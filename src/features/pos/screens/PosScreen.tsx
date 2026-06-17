@@ -36,8 +36,8 @@ export function PosScreen() {
       let params: any[] = [];
       
       if (search.trim()) {
-        query += ' WHERE name LIKE ? OR sku = ?';
-        params = [`%${search}%`, search];
+        query += ' WHERE name LIKE ? OR sku = ? OR barcode = ?';
+        params = [`%${search}%`, search.trim(), search.trim()];
       }
       
       const rows = await db.getAllAsync<Product>(query, params);
@@ -77,8 +77,8 @@ export function PosScreen() {
     async (code: string) => {
       try {
         const product = await db.getFirstAsync<Product>(
-          'SELECT id, sku, name, stock, priceCents, lastUpdated FROM products WHERE sku = ? LIMIT 1',
-          [code]
+          'SELECT id, sku, barcode, name, stock, priceCents, lastUpdated FROM products WHERE barcode = ? OR sku = ? LIMIT 1',
+          [code, code]
         );
         if (!product) {
           setScanFeedback(`❌ ${code}`);

@@ -29,6 +29,43 @@ export interface Sale {
   createdAt: number;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export interface BackendSalePayload {
+  customerId?: string;
+  saleDate?: string;
+  discountType?: 'FIXED';
+  discountValue?: number;
+  items: { productId: string; quantity: number }[];
+  payment?: { amountCents: number; method: 'CASH'; reference?: string };
+}
+
+/**
+ * Transform the local mobile sale into the backend `POST /sales` DTO.
+ * The backend derives line prices and totals from the product catalog, so we
+ * only send productId + quantity. A PAID sale includes a cash payment for the
+ * computed total; DUE/PARTIAL sales are left unpaid for the backend to track.
+ */
+export function toBackendSalePayload(input: SaleInput): BackendSalePayload {
+  const payload: BackendSalePayload = {
+    saleDate: new Date(input.createdAt).toISOString(),
+    items: input.items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+  };
+
+  if (input.customerId && UUID_RE.test(input.customerId)) {
+    payload.customerId = input.customerId;
+  }
+  if (input.discountCents > 0) {
+    payload.discountType = 'FIXED';
+    payload.discountValue = input.discountCents;
+  }
+  if (input.paymentStatus === 'PAID') {
+    payload.payment = { amountCents: input.totalCents, method: 'CASH' };
+  }
+
+  return payload;
+}
+
 export const salesApi = {
   /**
    * Submits a POS cashier checkout transaction.
@@ -95,7 +132,7 @@ export const salesApi = {
 
       // 3. Post to backend if online
       try {
-        await apiClient.post('/sales', input);
+        await apiClient.post('/sales', toBackendSalePayload(input));
         return { success: true, offline: false };
       } catch (err) {
         // Fallback: If network times out, mark local record unsynced, queue to outbox, and return success

@@ -7,6 +7,25 @@ import * as SQLite from 'expo-sqlite';
 
 export const DATABASE_NAME = 'bizos.db';
 
+/**
+ * Adds a column to an existing table if it is not already present.
+ * Idempotent — swallows the "duplicate column name" error.
+ */
+async function addColumnIfMissing(
+  db: SQLite.SQLiteDatabase,
+  table: string,
+  column: string,
+  definition: string,
+): Promise<void> {
+  try {
+    const cols = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
+    if (cols.some((c) => c.name === column)) return;
+    await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`);
+  } catch (err) {
+    console.warn(`[SQLite] Migration skipped for ${table}.${column}:`, (err as Error)?.message);
+  }
+}
+
 export async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
   try {
     // 1. Enable Foreign Key Constraints for relational integrity
@@ -18,9 +37,12 @@ export async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<voi
       CREATE TABLE IF NOT EXISTS products (
         id TEXT PRIMARY KEY NOT NULL,
         sku TEXT UNIQUE NOT NULL,
+        barcode TEXT,
         name TEXT NOT NULL,
         stock INTEGER NOT NULL DEFAULT 0,
         priceCents INTEGER NOT NULL DEFAULT 0,
+        costPriceCents INTEGER NOT NULL DEFAULT 0,
+        lowStockThreshold INTEGER NOT NULL DEFAULT 10,
         lastUpdated INTEGER NOT NULL
       );
 
@@ -79,9 +101,16 @@ export async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<voi
       );
     `);
 
+    // 2b. Lightweight migrations for databases created by earlier versions.
+    // Each ALTER is tolerant of "duplicate column" errors so it is idempotent.
+    await addColumnIfMissing(db, 'products', 'barcode', 'TEXT');
+    await addColumnIfMissing(db, 'products', 'costPriceCents', 'INTEGER NOT NULL DEFAULT 0');
+    await addColumnIfMissing(db, 'products', 'lowStockThreshold', 'INTEGER NOT NULL DEFAULT 10');
+
     // 3. Create Indexes for query optimizations during cashier scanning and ledger searches
     await db.execAsync(`
       CREATE INDEX IF NOT EXISTS idx_products_sku ON products(sku);
+      CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
       CREATE INDEX IF NOT EXISTS idx_sales_synced ON sales(isSynced);
       CREATE INDEX IF NOT EXISTS idx_cashbook_synced ON cashbook_entries(isSynced);
       CREATE INDEX IF NOT EXISTS idx_outbox_created ON sync_outbox(createdAt);
@@ -101,6 +130,8 @@ export async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<voi
          ('prod-5', '1005', 'Coca-Cola 500ml / কোকা-কোলা ৫০০ মিলি', 4, 5000, ?)`,
         [now, now, now, now, now]
       );
+      // Use SKU as the default barcode for seeded demo products.
+      await db.runAsync('UPDATE products SET barcode = sku WHERE barcode IS NULL');
     }
 
     const customerCountRow = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM customers');
