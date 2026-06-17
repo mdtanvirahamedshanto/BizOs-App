@@ -7,7 +7,9 @@ import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { BarcodeScannerModal } from '@/components/ui/BarcodeScannerModal';
 import { t } from '@/utils/translation';
+import { useNetworkStore } from '@/lib/network/network.store';
 
 interface CartItem {
   product: Product;
@@ -16,6 +18,7 @@ interface CartItem {
 
 export function PosScreen() {
   const db = SQLite.useSQLiteContext();
+  const isOnline = useNetworkStore((s) => s.isOnline);
   const [search, setSearch] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -23,6 +26,8 @@ export function PosScreen() {
   const [taxCents, setTaxCents] = useState('0');
   const [paymentStatus, setPaymentStatus] = useState<'PAID' | 'DUE' | 'PARTIAL'>('PAID');
   const [loading, setLoading] = useState(false);
+  const [scannerVisible, setScannerVisible] = useState(false);
+  const [scanFeedback, setScanFeedback] = useState<string | null>(null);
 
   // Fetch catalog products from SQLite local cache database
   const searchProducts = useCallback(async () => {
@@ -66,6 +71,31 @@ export function PosScreen() {
       return [...prev, { product, quantity: 1 }];
     });
   };
+
+  // Resolve a scanned barcode to a product (matched against SKU) and add to cart.
+  const resolveBarcode = useCallback(
+    async (code: string) => {
+      try {
+        const product = await db.getFirstAsync<Product>(
+          'SELECT id, sku, name, stock, priceCents, lastUpdated FROM products WHERE sku = ? LIMIT 1',
+          [code]
+        );
+        if (!product) {
+          setScanFeedback(`❌ ${code}`);
+          return;
+        }
+        if (product.stock <= 0) {
+          setScanFeedback(`⚠️ ${product.name}`);
+          return;
+        }
+        addToCart(product);
+        setScanFeedback(`✓ ${product.name}`);
+      } catch (err) {
+        console.error('[POS] Barcode lookup failure:', err);
+      }
+    },
+    [db]
+  );
 
   const updateQuantity = (productId: string, amount: number) => {
     setCart((prev) => {
@@ -117,8 +147,7 @@ export function PosScreen() {
       };
 
       // Execute POS checkout via Sales API module (automatically enqueues in outbox if connection drops)
-      const isOfflineMode = true; // Test mode simulation
-      const result = await salesApi.createSale(db, payload, isOfflineMode);
+      const result = await salesApi.createSale(db, payload, !isOnline);
 
       setLoading(false);
       setCart([]);
@@ -143,12 +172,26 @@ export function PosScreen() {
       
       {/* 1. Header Search Area */}
       <View style={{ padding: 16, backgroundColor: '#ffffff', borderBottomWidth: 1, borderBottomColor: '#cbd5e1' }}>
-        <Input
-          placeholder="বারকোড স্ক্যান করুন বা প্রোডাক্টের নাম খুঁজুন..."
-          value={search}
-          onChangeText={setSearch}
-          onClear={() => setSearch('')}
-        />
+        <View className="flex-row items-start">
+          <View className="flex-1">
+            <Input
+              placeholder="প্রোডাক্টের নাম বা SKU খুঁজুন..."
+              value={search}
+              onChangeText={setSearch}
+              onClear={() => setSearch('')}
+            />
+          </View>
+          <TouchableOpacity
+            onPress={() => {
+              setScanFeedback(null);
+              setScannerVisible(true);
+            }}
+            activeOpacity={0.85}
+            className="h-12 w-12 ml-2 rounded-xl bg-primary items-center justify-center"
+          >
+            <Text style={{ fontSize: 18 }}>📷</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={{ flex: 1, flexDirection: 'row' }}>
@@ -277,6 +320,13 @@ export function PosScreen() {
           </View>
         </View>
       </View>
+
+      <BarcodeScannerModal
+        visible={scannerVisible}
+        onClose={() => setScannerVisible(false)}
+        onScanned={(code) => void resolveBarcode(code)}
+        feedback={scanFeedback}
+      />
     </View>
   );
 }

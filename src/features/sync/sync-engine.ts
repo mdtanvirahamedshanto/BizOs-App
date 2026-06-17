@@ -1,7 +1,9 @@
-import { useState, useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import * as SQLite from 'expo-sqlite';
 import { apiClient } from '@/lib/api/client';
 import { useAuthStore } from '@/store/auth.store';
+import { useNetworkStore } from '@/lib/network/network.store';
+import { useSyncStore } from './sync.store';
 
 interface OutboxItem {
   id: string;
@@ -9,114 +11,151 @@ interface OutboxItem {
   payload: string;
 }
 
+const MAX_BATCH = 50;
+
+async function countPending(db: SQLite.SQLiteDatabase): Promise<number> {
+  const row = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM sync_outbox');
+  return row?.count ?? 0;
+}
+
 /**
- * Hook interface driving queue replication logic from local SQLite storage.
- * Evaluates pending transaction outbox logs and reconciles state with backend APIs.
+ * Dispatches a single outbox payload to the matching backend route.
+ * Returns true when the server accepted it (or when the item is unrecoverable
+ * and should be dropped to unblock the queue).
  */
-export function useSyncEngine() {
-  const [isSyncing, setIsSyncing] = useState(false);
-  const { isAuthenticated } = useAuthStore();
-  const db = SQLite.useSQLiteContext();
+async function dispatch(db: SQLite.SQLiteDatabase, item: OutboxItem): Promise<boolean> {
+  const payload = JSON.parse(item.payload);
 
-  const triggerSync = useCallback(async () => {
-    // Prevent duplicate sync cycles or unauthenticated synchronization
-    if (isSyncing || !isAuthenticated) return;
-    setIsSyncing(true);
-
-    try {
-      // 1. Fetch the oldest pending outbox record
-      const item = await db.getFirstAsync<OutboxItem>(
-        'SELECT id, eventType, payload FROM sync_outbox WHERE isProcessing = 0 ORDER BY createdAt ASC LIMIT 1'
-      );
-
-      if (!item) {
-        setIsSyncing(false);
-        return; // Queue is fully synchronized
+  switch (item.eventType) {
+    case 'CREATE_SALE': {
+      const res = await apiClient.post('/sales', payload);
+      if (res.status === 200 || res.status === 201) {
+        await db.runAsync('UPDATE sales SET isSynced = 1 WHERE id = ?', [payload.id]);
+        return true;
       }
-
-      // 2. Lock item to prevent race conditions during active HTTP execution
-      await db.runAsync('UPDATE sync_outbox SET isProcessing = 1 WHERE id = ?', [item.id]);
-
-      const payload = JSON.parse(item.payload);
-      let syncSuccess = false;
-
-      // 3. Dispatch payload to matching API route depending on action type
-      switch (item.eventType) {
-        case 'CREATE_SALE': {
-          const response = await apiClient.post('/sales', payload);
-          if (response.status === 201 || response.status === 200) {
-            syncSuccess = true;
-            // Mark sale isSynced local state
-            await db.runAsync('UPDATE sales SET isSynced = 1 WHERE id = ?', [payload.id]);
-          }
-          break;
-        }
-
-        case 'CASHBOOK_IN': {
-          const response = await apiClient.post('/cashbook/cash-in', payload);
-          if (response.status === 201 || response.status === 200) {
-            syncSuccess = true;
-            await db.runAsync('UPDATE cashbook_entries SET isSynced = 1 WHERE id = ?', [payload.id]);
-          }
-          break;
-        }
-
-        case 'CASHBOOK_OUT': {
-          const response = await apiClient.post('/cashbook/cash-out', payload);
-          if (response.status === 201 || response.status === 200) {
-            syncSuccess = true;
-            await db.runAsync('UPDATE cashbook_entries SET isSynced = 1 WHERE id = ?', [payload.id]);
-          }
-          break;
-        }
-
-        case 'COLLECT_DUE': {
-          const apiPayload = {
-            accountId: payload.accountId,
-            amountCents: payload.amountCents,
-            paymentMethod: payload.paymentMethod,
-            reference: payload.reference,
-          };
-          const response = await apiClient.post('/khata/collection', apiPayload);
-          if (response.status === 201 || response.status === 200) {
-            syncSuccess = true;
-            if (payload.cashbookId) {
-              await db.runAsync('UPDATE cashbook_entries SET isSynced = 1 WHERE id = ?', [payload.cashbookId]);
-            }
-          }
-          break;
-        }
-
-        default:
-          console.warn(`[SyncEngine] Unrecognized event type omitted: ${item.eventType}`);
-          // Remove anomalous item to unblock the outbox loop
-          syncSuccess = true;
-          break;
-      }
-
-      if (syncSuccess) {
-        // 4. Remove successfully synchronized outbox item
-        await db.runAsync('DELETE FROM sync_outbox WHERE id = ?', [item.id]);
-      } else {
-        // Release lock on failures to allow retries
-        await db.runAsync('UPDATE sync_outbox SET isProcessing = 0 WHERE id = ?', [item.id]);
-      }
-
-      setIsSyncing(false);
-
-      // Recursive call with minor tick delay to process next item in queue
-      setTimeout(() => {
-        void triggerSync();
-      }, 50);
-
-    } catch (error) {
-      console.error('[SyncEngine] Synchronization loop failure:', error);
-      setIsSyncing(false);
+      return false;
     }
-  }, [db, isAuthenticated, isSyncing]);
+    case 'CASHBOOK_IN': {
+      const res = await apiClient.post('/cashbook/cash-in', payload);
+      if (res.status === 200 || res.status === 201) {
+        await db.runAsync('UPDATE cashbook_entries SET isSynced = 1 WHERE id = ?', [payload.id]);
+        return true;
+      }
+      return false;
+    }
+    case 'CASHBOOK_OUT': {
+      const res = await apiClient.post('/cashbook/cash-out', payload);
+      if (res.status === 200 || res.status === 201) {
+        await db.runAsync('UPDATE cashbook_entries SET isSynced = 1 WHERE id = ?', [payload.id]);
+        return true;
+      }
+      return false;
+    }
+    case 'COLLECT_DUE': {
+      const res = await apiClient.post('/khata/collection', {
+        accountId: payload.accountId,
+        amountCents: payload.amountCents,
+        paymentMethod: payload.paymentMethod,
+        reference: payload.reference,
+      });
+      if (res.status === 200 || res.status === 201) {
+        if (payload.cashbookId) {
+          await db.runAsync('UPDATE cashbook_entries SET isSynced = 1 WHERE id = ?', [payload.cashbookId]);
+        }
+        return true;
+      }
+      return false;
+    }
+    default:
+      console.warn(`[SyncEngine] Dropping unknown event type: ${item.eventType}`);
+      return true; // drop to unblock queue
+  }
+}
 
-  return {
-    triggerSync,
-    isSyncing,
-  };
+/**
+ * Processes the entire outbox queue sequentially. Safe to call repeatedly;
+ * uses the global sync store to prevent overlapping runs and to surface
+ * progress to the UI. Stops early on the first network failure so unsynced
+ * items are retried on the next connectivity/auth change.
+ */
+export async function processOutbox(db: SQLite.SQLiteDatabase): Promise<void> {
+  const store = useSyncStore.getState();
+  if (store.isSyncing) return;
+  if (!useAuthStore.getState().isAuthenticated) return;
+  if (!useNetworkStore.getState().isOnline) {
+    store.setPendingCount(await countPending(db));
+    return;
+  }
+
+  store.setSyncing(true);
+  try {
+    let processed = 0;
+    while (processed < MAX_BATCH) {
+      const item = await db.getFirstAsync<OutboxItem>(
+        'SELECT id, eventType, payload FROM sync_outbox ORDER BY createdAt ASC LIMIT 1'
+      );
+      if (!item) break;
+
+      let ok = false;
+      try {
+        ok = await dispatch(db, item);
+      } catch (err) {
+        // Network / server error: keep the item and stop; retry later.
+        console.warn('[SyncEngine] Dispatch failed, will retry:', (err as Error)?.message);
+        break;
+      }
+
+      if (ok) {
+        await db.runAsync('DELETE FROM sync_outbox WHERE id = ?', [item.id]);
+        useSyncStore.getState().setLastSyncAt(Date.now());
+      } else {
+        break;
+      }
+      processed += 1;
+    }
+  } finally {
+    useSyncStore.getState().setPendingCount(await countPending(db));
+    useSyncStore.getState().setSyncing(false);
+  }
+}
+
+/**
+ * Auto-sync controller. Mount once near the app root (inside SQLiteProvider).
+ * Triggers the outbox processor whenever the device comes online or the user
+ * authenticates, refreshes the pending count, and polls periodically as a
+ * safety net for transient failures.
+ */
+export function useAutoSync(): void {
+  const db = SQLite.useSQLiteContext();
+  const isOnline = useNetworkStore((s) => s.isOnline);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const setPendingCount = useSyncStore((s) => s.setPendingCount);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const run = useCallback(() => {
+    void processOutbox(db);
+  }, [db]);
+
+  // Keep pending badge accurate even while offline.
+  useEffect(() => {
+    void countPending(db).then(setPendingCount);
+  }, [db, setPendingCount]);
+
+  // React to connectivity / auth transitions.
+  useEffect(() => {
+    if (isOnline && isAuthenticated) {
+      run();
+    }
+  }, [isOnline, isAuthenticated, run]);
+
+  // Periodic safety-net retry while online + authenticated.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    intervalRef.current = setInterval(() => {
+      if (useNetworkStore.getState().isOnline) run();
+    }, 30000);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [isAuthenticated, run]);
 }

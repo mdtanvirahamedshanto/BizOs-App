@@ -7,9 +7,11 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { t } from '@/utils/translation';
+import { useNetworkStore } from '@/lib/network/network.store';
 
 export function CashbookScreen() {
   const db = SQLite.useSQLiteContext();
+  const isOnline = useNetworkStore((s) => s.isOnline);
   const [balance, setBalance] = useState<number>(0);
   const [entries, setEntries] = useState<CashbookEntry[]>([]);
   const [showInModal, setShowInModal] = useState(false);
@@ -69,7 +71,7 @@ export function CashbookScreen() {
         createdAt: Date.now(),
       };
 
-      const result = await cashbookApi.recordCashIn(db, payload, true);
+      const result = await cashbookApi.recordCashIn(db, payload, !isOnline);
       
       setLoading(false);
       setShowInModal(false);
@@ -110,7 +112,7 @@ export function CashbookScreen() {
         createdAt: Date.now(),
       };
 
-      const result = await cashbookApi.recordCashOut(db, payload, true);
+      const result = await cashbookApi.recordCashOut(db, payload, !isOnline);
 
       setLoading(false);
       setShowOutModal(false);

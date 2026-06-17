@@ -12,6 +12,7 @@
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
     "@react-native-async-storage/async-storage": "1.23.1",
+    "@react-native-community/netinfo": "^11.4.1",
     "@react-navigation/bottom-tabs": "^6.6.1",
     "@react-navigation/drawer": "^6.6.15",
     "@react-navigation/native": "^6.1.18",
@@ -20,6 +21,7 @@
     "axios": "^1.7.7",
     "expo": "~52.0.0",
     "expo-asset": "~11.0.5",
+    "expo-camera": "~16.0.18",
     "expo-local-authentication": "~15.0.0",
     "expo-sqlite": "~15.0.0",
     "expo-status-bar": "~2.0.0",

@@ -14,20 +14,32 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.bizos.mobile"
+      "bundleIdentifier": "com.bizos.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "BizOS uses the camera to scan product barcodes at checkout."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.bizos.mobile"
+      "package": "com.bizos.mobile",
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "BizOS uses the camera to scan product barcodes at checkout."
+        }
+      ]
     ]
   }
 }

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -50,8 +51,16 @@ export function LoginScreen() {
   };
 
   return (
-    <View className="flex-1 justify-center p-6 bg-slate-50">
-      <View className="w-full max-w-sm mx-auto">
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#f8fafc' }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 24 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View className="w-full max-w-sm mx-auto">
         
         {/* Brand Icon Header */}
         <View className="items-center mb-6">
@@ -126,10 +135,12 @@ export function LoginScreen() {
             </TouchableOpacity>
           )}
 
-        </View>
+          </View>
 
-      </View>
-    </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 export default LoginScreen;

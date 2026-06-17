@@ -14,29 +14,9 @@ import { DashboardScreen } from '@/features/dashboard/screens/DashboardScreen';
 import { PosScreen } from '@/features/pos/screens/PosScreen';
 import { CashbookScreen } from '@/features/cashbook/screens/CashbookScreen';
 import { KhataScreen } from '@/features/khata/screens/KhataScreen';
+import { ReportsScreen } from '@/features/reports/screens/ReportsScreen';
+import { SettingsScreen } from '@/features/settings/screens/SettingsScreen';
 import { t } from '@/utils/translation';
-
-// ---------------------------------------------------------
-// Screen Placeholders
-// ---------------------------------------------------------
-
-function ReportsScreen() {
-  return (
-    <View className="flex-1 justify-center items-center bg-slate-50">
-      <Text className="text-lg font-bold text-slate-800 font-sans">SME Reports Screen</Text>
-      <Text className="text-xs text-slate-550 font-sans mt-1">Protected: Only visible to Managers & Admins</Text>
-    </View>
-  );
-}
-
-function SettingsScreen() {
-  return (
-    <View className="flex-1 justify-center items-center bg-slate-50">
-      <Text className="text-lg font-bold text-slate-800 font-sans">Terminal Settings Screen</Text>
-      <Text className="text-xs text-slate-550 font-sans mt-1">Protected: Only visible to Admins & SuperAdmins</Text>
-    </View>
-  );
-}
 
 // ---------------------------------------------------------
 // Custom Side Drawer Drawer Layout
@@ -176,7 +156,6 @@ function MainTabsNavigator() {
 
 function AppDrawerNavigator() {
   const canReadReports = useHasPermission('reports:read');
-  const canWriteSettings = useHasPermission('settings:write');
 
   return (
     <Drawer.Navigator
@@ -222,13 +201,11 @@ function AppDrawerNavigator() {
         />
       )}
 
-      {canWriteSettings && (
-        <Drawer.Screen
-          name="Settings"
-          component={SettingsScreen}
-          options={{ drawerLabel: t('save') === 'সেভ করুন' ? 'সেটিংস' : 'Settings' }}
-        />
-      )}
+      <Drawer.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{ drawerLabel: t('save') === 'সেভ করুন' ? 'সেটিংস' : 'Settings' }}
+      />
     </Drawer.Navigator>
   );
 }

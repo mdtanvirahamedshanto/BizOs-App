@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { useLanguageStore, t } from '@/utils/translation';
+import { useNetworkStore } from '@/lib/network/network.store';
 
 interface Customer {
   id: string;
@@ -20,6 +21,7 @@ export function KhataScreen() {
   const db = SQLite.useSQLiteContext();
   const { language } = useLanguageStore();
   const isBn = language === 'bn';
+  const isOnline = useNetworkStore((s) => s.isOnline);
 
   const [search, setSearch] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -131,9 +133,7 @@ export function KhataScreen() {
         createdAt: Date.now(),
       };
 
-      // Set offline mode simulation or online if connected.
-      const isOfflineMode = true; 
-      const result = await khataApi.recordCollection(db, payload, isOfflineMode);
+      const result = await khataApi.recordCollection(db, payload, !isOnline);
 
       setLoading(false);
       setShowCollectModal(false);
