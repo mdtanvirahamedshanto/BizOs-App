@@ -6,7 +6,7 @@ import { toBackendSalePayload } from '@/lib/api/modules/sales.api';
 import { useAuthStore } from '@/store/auth.store';
 import { useNetworkStore } from '@/lib/network/network.store';
 import { useSyncStore } from './sync.store';
-import { pullProducts } from './pull-sync';
+import { pullProducts, pullCustomers } from './pull-sync';
 
 interface OutboxItem {
   id: string;
@@ -191,6 +191,11 @@ export async function syncAll(db: SQLite.SQLiteDatabase): Promise<void> {
     await pullProducts(db);
   } catch (err) {
     console.warn('[SyncEngine] Product pull failed:', (err as Error)?.message);
+  }
+  try {
+    await pullCustomers(db);
+  } catch (err) {
+    console.warn('[SyncEngine] Customer pull failed:', (err as Error)?.message);
   }
 }
 

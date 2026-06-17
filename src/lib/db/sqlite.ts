@@ -52,7 +52,9 @@ export async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<voi
         name TEXT NOT NULL,
         phone TEXT,
         dueCents INTEGER NOT NULL DEFAULT 0,
-        creditLimitCents INTEGER NOT NULL DEFAULT 0
+        creditLimitCents INTEGER NOT NULL DEFAULT 0,
+        khataAccountId TEXT, -- backend khata account id (needed to sync collections)
+        lastUpdated INTEGER NOT NULL DEFAULT 0
       );
 
       -- C. Sales Record (Master)
@@ -106,6 +108,8 @@ export async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<voi
     await addColumnIfMissing(db, 'products', 'barcode', 'TEXT');
     await addColumnIfMissing(db, 'products', 'costPriceCents', 'INTEGER NOT NULL DEFAULT 0');
     await addColumnIfMissing(db, 'products', 'lowStockThreshold', 'INTEGER NOT NULL DEFAULT 10');
+    await addColumnIfMissing(db, 'customers', 'khataAccountId', 'TEXT');
+    await addColumnIfMissing(db, 'customers', 'lastUpdated', 'INTEGER NOT NULL DEFAULT 0');
 
     // 3. Create Indexes for query optimizations during cashier scanning and ledger searches
     await db.execAsync(`

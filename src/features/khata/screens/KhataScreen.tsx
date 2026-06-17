@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, ScrollView, Modal, Alert, TouchableOpacity, Linking } from 'react-native';
+import { View, Text, ScrollView, Modal, Alert, TouchableOpacity, Linking, RefreshControl } from 'react-native';
 import * as SQLite from 'expo-sqlite';
 import { khataApi, CollectionInput } from '@/lib/api/modules/khata.api';
+import { pullCustomers } from '@/features/sync/pull-sync';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -15,6 +16,7 @@ interface Customer {
   phone: string;
   dueCents: number;
   creditLimitCents: number;
+  khataAccountId: string | null;
 }
 
 export function KhataScreen() {
@@ -33,11 +35,12 @@ export function KhataScreen() {
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'MFS' | 'BANK'>('CASH');
   const [reference, setReference] = useState('');
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Fetch customer ledgers from SQLite
   const loadCustomers = useCallback(async () => {
     try {
-      let query = 'SELECT id, name, phone, dueCents, creditLimitCents FROM customers';
+      let query = 'SELECT id, name, phone, dueCents, creditLimitCents, khataAccountId FROM customers';
       let params: any[] = [];
 
       if (search.trim()) {
@@ -56,6 +59,26 @@ export function KhataScreen() {
   useEffect(() => {
     void loadCustomers();
   }, [loadCustomers]);
+
+  // Pull latest customer dues from the server (server is authority for balances).
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      if (isOnline) {
+        await pullCustomers(db);
+        await loadCustomers();
+      } else {
+        Alert.alert(
+          isBn ? 'অফলাইন' : 'Offline',
+          isBn ? 'সর্বশেষ বাকি পেতে ইন্টারনেট প্রয়োজন।' : 'Internet is required to refresh dues.'
+        );
+      }
+    } catch (err) {
+      console.warn('[Khata] Refresh failed:', (err as Error)?.message);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [db, isOnline, isBn, loadCustomers]);
 
   // Handle reminder notification dispatch via WhatsApp or SMS
   const sendDueReminder = async (customer: Customer) => {
@@ -121,12 +144,24 @@ export function KhataScreen() {
       );
     }
 
+    // Real backend khata account id is required to sync the collection to the
+    // correct ledger. Demo/local-only customers without one can't be synced.
+    if (!selectedCustomer.khataAccountId) {
+      Alert.alert(
+        isBn ? 'সিঙ্ক সম্ভব নয়' : 'Cannot Sync',
+        isBn
+          ? 'এই গ্রাহক এখনো সার্ভারের সাথে যুক্ত হয়নি। তালিকা রিফ্রেশ করে আবার চেষ্টা করুন।'
+          : 'This customer is not linked to the server yet. Pull to refresh the list and try again.'
+      );
+      return;
+    }
+
     setLoading(true);
     try {
       const payload: CollectionInput = {
-        id: Math.random().toString(),
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         customerId: selectedCustomer.id,
-        accountId: selectedCustomer.id, // Map local customer to ledger account
+        accountId: selectedCustomer.khataAccountId, // backend khata account id
         amountCents: collectedCents,
         paymentMethod,
         reference: reference || undefined,
@@ -185,7 +220,10 @@ export function KhataScreen() {
       </View>
 
       {/* 3. Customer Debtors List */}
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+      <ScrollView
+        contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void handleRefresh()} />}
+      >
         {customers.length === 0 ? (
           <Text className="text-center text-xs text-slate-450 mt-8 font-sans">
             {isBn ? 'কোনো বাকি কাস্টমার রেকর্ড পাওয়া যায়নি' : 'No due records found'}
