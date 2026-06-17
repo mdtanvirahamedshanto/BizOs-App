@@ -1,4 +1,4 @@
-import { apiClient } from '../client';
+import { apiClient, idempotent } from '../client';
 import * as SQLite from 'expo-sqlite';
 
 export interface SaleItemInput {
@@ -132,7 +132,7 @@ export const salesApi = {
 
       // 3. Post to backend if online
       try {
-        await apiClient.post('/sales', toBackendSalePayload(input));
+        await apiClient.post('/sales', toBackendSalePayload(input), idempotent(input.id));
         return { success: true, offline: false };
       } catch (err) {
         // Fallback: If network times out, mark local record unsynced, queue to outbox, and return success

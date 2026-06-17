@@ -1,4 +1,4 @@
-import { apiClient } from '../client';
+import { apiClient, idempotent } from '../client';
 import * as SQLite from 'expo-sqlite';
 
 export interface CashbookEntryInput {
@@ -65,7 +65,7 @@ export const cashbookApi = {
 
       // 3. Post to backend if online
       try {
-        await apiClient.post('/cashbook/cash-in', input);
+        await apiClient.post('/cashbook/cash-in', input, idempotent(input.id));
         return { success: true, offline: false };
       } catch (err) {
         // Fallback: Queue in outbox on sync error
@@ -132,7 +132,7 @@ export const cashbookApi = {
 
       // 3. Post to backend if online
       try {
-        await apiClient.post('/cashbook/cash-out', input);
+        await apiClient.post('/cashbook/cash-out', input, idempotent(input.id));
         return { success: true, offline: false };
       } catch (err) {
         // Fallback: Queue in outbox on sync error

@@ -1,5 +1,19 @@
-import { apiClient } from '../client';
+import { apiClient, idempotent } from '../client';
 import * as SQLite from 'expo-sqlite';
+
+/** Map mobile khata payment methods to the backend payment method enum. */
+function mapKhataMethod(method: string): string {
+  switch (method) {
+    case 'CASH':
+      return 'CASH';
+    case 'BANK':
+      return 'BANK';
+    case 'MFS':
+      return 'BKASH';
+    default:
+      return 'OTHER';
+  }
+}
 
 export interface KhataAccount {
   id: string;
@@ -53,6 +67,10 @@ export const khataApi = {
       );
       const customerName = customerRow?.name || 'Customer';
 
+      // Stable id reused for the outbox row AND the idempotency key so an
+      // online attempt and any later retry are deduped to one collection.
+      const collectionId = input.id || Math.random().toString();
+
       // 3. Add transaction matching cashbook inflows
       const cashbookId = input.cashbookId || Math.random().toString();
       await db.runAsync(
@@ -70,44 +88,36 @@ export const khataApi = {
         ]
       );
 
+      const outboxPayload = JSON.stringify({ ...input, id: collectionId, cashbookId });
+
       // 4. Queue in outbox if offline
       if (isOffline) {
         await db.runAsync(
           `INSERT INTO sync_outbox (id, eventType, payload, isProcessing, createdAt)
            VALUES (?, ?, ?, ?, ?)`,
-          [
-            input.id || Math.random().toString(),
-            'COLLECT_DUE',
-            JSON.stringify({ ...input, cashbookId }),
-            0,
-            Date.now(),
-          ]
+          [collectionId, 'COLLECT_DUE', outboxPayload, 0, Date.now()]
         );
         return { success: true, offline: true };
       }
 
-      // 5. Post to backend if online
+      // 5. Post to backend if online (backend keys collection by account id in URL)
       try {
-        const apiPayload = {
-          accountId: input.accountId,
-          amountCents: input.amountCents,
-          paymentMethod: input.paymentMethod,
-          reference: input.reference,
-        };
-        await apiClient.post('/khata/collection', apiPayload);
+        await apiClient.post(
+          `/khata/accounts/${input.accountId}/collection`,
+          {
+            amountCents: input.amountCents,
+            method: mapKhataMethod(input.paymentMethod),
+            reference: input.reference,
+          },
+          idempotent(collectionId)
+        );
         return { success: true, offline: false };
       } catch (err) {
         // Fallback: Queue in outbox on network failure
         await db.runAsync(
           `INSERT INTO sync_outbox (id, eventType, payload, isProcessing, createdAt)
            VALUES (?, ?, ?, ?, ?)`,
-          [
-            input.id || Math.random().toString(),
-            'COLLECT_DUE',
-            JSON.stringify({ ...input, cashbookId }),
-            0,
-            Date.now(),
-          ]
+          [collectionId, 'COLLECT_DUE', outboxPayload, 0, Date.now()]
         );
         return { success: true, offline: true };
       }

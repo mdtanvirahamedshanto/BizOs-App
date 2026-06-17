@@ -84,13 +84,19 @@ export function InventoryScreen() {
     setNotes('');
   };
 
-  const queueStockAdjust = async (productId: string, type: StockAdjustmentType, quantity: number, note: string) => {
+  const queueStockAdjust = async (
+    adjustId: string,
+    productId: string,
+    type: StockAdjustmentType,
+    quantity: number,
+    note: string,
+  ) => {
     await db.runAsync(
       `INSERT INTO sync_outbox (id, eventType, payload, isProcessing, createdAt) VALUES (?, ?, ?, ?, ?)`,
       [
-        Math.random().toString(36).slice(2),
+        adjustId,
         'STOCK_ADJUST',
-        JSON.stringify({ productId, type, quantity, notes: note || undefined }),
+        JSON.stringify({ id: adjustId, productId, type, quantity, notes: note || undefined }),
         0,
         Date.now(),
       ]
@@ -117,6 +123,9 @@ export function InventoryScreen() {
     }
 
     setSaving(true);
+    // Stable id reused for the online attempt and any offline retry so the
+    // server applies this stock movement exactly once (idempotency key).
+    const adjustId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     try {
       // 1. Apply to local cache immediately (offline-first).
       await db.runAsync('UPDATE products SET stock = ?, lastUpdated = ? WHERE id = ?', [
@@ -129,13 +138,17 @@ export function InventoryScreen() {
       let offline = !isOnline;
       if (isOnline) {
         try {
-          await productsApi.adjustStock(selected.id, { type: adjustType, quantity, notes: notes || undefined });
+          await productsApi.adjustStock(
+            selected.id,
+            { type: adjustType, quantity, notes: notes || undefined },
+            adjustId,
+          );
         } catch {
-          await queueStockAdjust(selected.id, adjustType, quantity, notes);
+          await queueStockAdjust(adjustId, selected.id, adjustType, quantity, notes);
           offline = true;
         }
       } else {
-        await queueStockAdjust(selected.id, adjustType, quantity, notes);
+        await queueStockAdjust(adjustId, selected.id, adjustType, quantity, notes);
       }
 
       setSelected(null);

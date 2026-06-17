@@ -1,4 +1,4 @@
-import { apiClient } from '../client';
+import { apiClient, idempotent } from '../client';
 
 /** Local (SQLite-cached) product shape used across POS / Inventory. */
 export interface Product {
@@ -79,14 +79,20 @@ export const productsApi = {
     return response.data;
   },
 
-  /** Record a stock movement (IN/OUT/ADJUSTMENT/DAMAGE) on the backend. */
+  /**
+   * Record a stock movement (IN/OUT/ADJUSTMENT/DAMAGE) on the backend.
+   * Pass a stable `idempotencyKey` (the local adjustment id) so a retried
+   * adjustment is applied to server stock only once.
+   */
   adjustStock: async (
     id: string,
     input: StockAdjustmentInput,
+    idempotencyKey?: string,
   ): Promise<{ success: boolean; data: unknown }> => {
     const response = await apiClient.post<{ success: boolean; data: unknown }>(
       `/products/${id}/stock-adjustments`,
       input,
+      idempotencyKey ? idempotent(idempotencyKey) : undefined,
     );
     return response.data;
   },

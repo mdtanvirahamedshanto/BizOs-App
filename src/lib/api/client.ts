@@ -17,6 +17,18 @@ export const apiClient = axios.create({
   },
 });
 
+/**
+ * Build a request config carrying a stable idempotency key.
+ *
+ * The SAME key must be used for the initial online attempt AND every outbox
+ * retry of the same logical operation (use the client-generated entity id).
+ * This lets the backend dedupe a request that succeeded server-side but whose
+ * response was lost — preventing duplicate sales / cash entries / stock moves.
+ */
+export function idempotent(key: string) {
+  return { headers: { 'X-Idempotency-Key': key } };
+}
+
 // Queue variables for handling token refresh requests concurrently
 let isRefreshing = false;
 let failedQueue: Array<{

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import axios from 'axios';
 import * as SQLite from 'expo-sqlite';
-import { apiClient } from '@/lib/api/client';
+import { apiClient, idempotent } from '@/lib/api/client';
 import { toBackendSalePayload } from '@/lib/api/modules/sales.api';
 import { useAuthStore } from '@/store/auth.store';
 import { useNetworkStore } from '@/lib/network/network.store';
@@ -43,9 +43,14 @@ async function countPending(db: SQLite.SQLiteDatabase): Promise<number> {
 async function dispatch(db: SQLite.SQLiteDatabase, item: OutboxItem): Promise<boolean> {
   const payload = JSON.parse(item.payload);
 
+  // The outbox row id is the stable idempotency key for this operation, so a
+  // retry of a request that already reached the server is deduped (never double
+  // applied). Payloads also carry the same id where available.
+  const idemKey: string = payload.id ?? item.id;
+
   switch (item.eventType) {
     case 'CREATE_SALE': {
-      const res = await apiClient.post('/sales', toBackendSalePayload(payload));
+      const res = await apiClient.post('/sales', toBackendSalePayload(payload), idempotent(idemKey));
       if (res.status === 200 || res.status === 201) {
         await db.runAsync('UPDATE sales SET isSynced = 1 WHERE id = ?', [payload.id]);
         return true;
@@ -57,7 +62,7 @@ async function dispatch(db: SQLite.SQLiteDatabase, item: OutboxItem): Promise<bo
         amountCents: payload.amountCents,
         description: payload.description,
         reference: payload.reference ?? undefined,
-      });
+      }, idempotent(idemKey));
       if (res.status === 200 || res.status === 201) {
         await db.runAsync('UPDATE cashbook_entries SET isSynced = 1 WHERE id = ?', [payload.id]);
         return true;
@@ -69,7 +74,7 @@ async function dispatch(db: SQLite.SQLiteDatabase, item: OutboxItem): Promise<bo
         amountCents: payload.amountCents,
         description: payload.description,
         reference: payload.reference ?? undefined,
-      });
+      }, idempotent(idemKey));
       if (res.status === 200 || res.status === 201) {
         await db.runAsync('UPDATE cashbook_entries SET isSynced = 1 WHERE id = ?', [payload.id]);
         return true;
@@ -81,7 +86,7 @@ async function dispatch(db: SQLite.SQLiteDatabase, item: OutboxItem): Promise<bo
         type: payload.type,
         quantity: payload.quantity,
         notes: payload.notes ?? undefined,
-      });
+      }, idempotent(idemKey));
       return res.status === 200 || res.status === 201;
     }
     case 'COLLECT_DUE': {
@@ -90,7 +95,7 @@ async function dispatch(db: SQLite.SQLiteDatabase, item: OutboxItem): Promise<bo
         amountCents: payload.amountCents,
         method: mapKhataMethod(payload.paymentMethod),
         reference: payload.reference ?? undefined,
-      });
+      }, idempotent(idemKey));
       if (res.status === 200 || res.status === 201) {
         if (payload.cashbookId) {
           await db.runAsync('UPDATE cashbook_entries SET isSynced = 1 WHERE id = ?', [payload.cashbookId]);
@@ -123,18 +128,18 @@ function isPermanentFailure(err: unknown): boolean {
  * progress to the UI. Stops early on the first network failure so unsynced
  * items are retried on the next connectivity/auth change.
  */
-export async function processOutbox(db: SQLite.SQLiteDatabase): Promise<void> {
+export async function processOutbox(db: SQLite.SQLiteDatabase): Promise<number> {
   const store = useSyncStore.getState();
-  if (store.isSyncing) return;
-  if (!useAuthStore.getState().isAuthenticated) return;
+  if (store.isSyncing) return 0;
+  if (!useAuthStore.getState().isAuthenticated) return 0;
   if (!useNetworkStore.getState().isOnline) {
     store.setPendingCount(await countPending(db));
-    return;
+    return 0;
   }
 
   store.setSyncing(true);
+  let processed = 0;
   try {
-    let processed = 0;
     while (processed < MAX_BATCH) {
       const item = await db.getFirstAsync<OutboxItem>(
         'SELECT id, eventType, payload FROM sync_outbox ORDER BY createdAt ASC LIMIT 1'
@@ -172,6 +177,7 @@ export async function processOutbox(db: SQLite.SQLiteDatabase): Promise<void> {
     useSyncStore.getState().setPendingCount(await countPending(db));
     useSyncStore.getState().setSyncing(false);
   }
+  return processed;
 }
 
 /**
@@ -213,11 +219,20 @@ export function useAutoSync(): void {
     }
   }, [isOnline, isAuthenticated, db]);
 
-  // Periodic safety-net retry (push only) while online + authenticated.
+  // Periodic safety-net retry while online + authenticated. Pushes the outbox,
+  // and if anything actually synced, pulls the catalog so server stock (which
+  // may have changed from another device) is reconciled back into the cache.
   useEffect(() => {
     if (!isAuthenticated) return;
     intervalRef.current = setInterval(() => {
-      if (useNetworkStore.getState().isOnline) void processOutbox(db);
+      if (!useNetworkStore.getState().isOnline) return;
+      void processOutbox(db).then((synced) => {
+        if (synced > 0) {
+          void pullProducts(db).catch((err) =>
+            console.warn('[SyncEngine] Post-push pull failed:', (err as Error)?.message),
+          );
+        }
+      });
     }, 30000);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
