@@ -7,7 +7,7 @@ import { kvStorage, storageKeys } from '@/lib/storage/mmkv';
 // Default targets the Android emulator's host loopback (10.0.2.2). For a
 // physical device use your machine's LAN IP, e.g. http://192.168.0.10:5000/api/v1
 const BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL?.trim() || 'http://10.0.2.2:5000/api/v1';
+  process.env.EXPO_PUBLIC_API_URL?.trim() || 'http://10.0.2.2:4000/api/v1';
 
 export const apiClient = axios.create({
   baseURL: BASE_URL,
@@ -121,11 +121,19 @@ apiClient.interceptors.response.use(
       processQueue(refreshError, null);
       isRefreshing = false;
 
-      // Clear authentication credentials since refresh session expired
-      kvStorage.removeItem(storageKeys.AUTH_TOKEN);
-      kvStorage.removeItem(storageKeys.REFRESH_TOKEN);
-      kvStorage.removeItem(storageKeys.USER_SESSION);
-      kvStorage.removeItem(storageKeys.USER_PERMISSIONS);
+      // Refresh session expired: clear credentials AND reset in-memory auth
+      // state so the UI immediately returns to the login screen instead of
+      // leaving the user stranded with dead tokens until the next restart.
+      // Lazy require avoids a circular import (auth store -> api -> auth store).
+      try {
+        const { useAuthStore } = require('@/store/auth.store') as typeof import('@/store/auth.store');
+        useAuthStore.getState().logout();
+      } catch {
+        kvStorage.removeItem(storageKeys.AUTH_TOKEN);
+        kvStorage.removeItem(storageKeys.REFRESH_TOKEN);
+        kvStorage.removeItem(storageKeys.USER_SESSION);
+        kvStorage.removeItem(storageKeys.USER_PERMISSIONS);
+      }
 
       return Promise.reject(refreshError);
     }

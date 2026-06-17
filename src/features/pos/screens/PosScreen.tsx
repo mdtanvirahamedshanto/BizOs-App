@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/Badge';
 import { BarcodeScannerModal } from '@/components/ui/BarcodeScannerModal';
 import { t } from '@/utils/translation';
 import { useNetworkStore } from '@/lib/network/network.store';
+import { newId } from '@/lib/id';
 
 interface CartItem {
   product: Product;
@@ -128,7 +129,7 @@ export function PosScreen() {
 
     setLoading(true);
     try {
-      const saleId = Math.random().toString(); // Pre-generate transaction UUID
+      const saleId = newId(); // Pre-generate stable sale id + idempotency key
 
       const itemsInput: SaleItemInput[] = cart.map((item) => ({
         productId: item.product.id,

@@ -1,5 +1,6 @@
 import { apiClient, idempotent } from '../client';
 import * as SQLite from 'expo-sqlite';
+import { newId } from '@/lib/id';
 
 /** Map mobile khata payment methods to the backend payment method enum. */
 function mapKhataMethod(method: string): string {
@@ -122,10 +123,10 @@ export const khataApi = {
 
       // Stable id reused for the outbox row AND the idempotency key so an
       // online attempt and any later retry are deduped to one collection.
-      const collectionId = input.id || Math.random().toString();
+      const collectionId = input.id || newId();
 
       // 3. Add transaction matching cashbook inflows
-      const cashbookId = input.cashbookId || Math.random().toString();
+      const cashbookId = input.cashbookId || newId();
       await db.runAsync(
         `INSERT INTO cashbook_entries (id, type, amountCents, description, source, reference, isSynced, createdAt)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,

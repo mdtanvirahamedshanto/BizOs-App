@@ -1,8 +1,11 @@
 import { io, Socket } from 'socket.io-client';
 import { kvStorage, storageKeys } from '@/lib/storage/mmkv';
 
-// Socket cloud endpoint matching the backend Server address
-const SOCKET_URL = 'http://10.0.2.2:5000';
+// Socket endpoint matching the backend server address.
+// Override per-environment via `EXPO_PUBLIC_SOCKET_URL`. Defaults to the Android
+// emulator host loopback on the backend port; use your LAN IP on a real device.
+const SOCKET_URL =
+  process.env.EXPO_PUBLIC_SOCKET_URL?.trim() || 'http://10.0.2.2:4000';
 
 class SocketService {
   private socket: Socket | null = null;

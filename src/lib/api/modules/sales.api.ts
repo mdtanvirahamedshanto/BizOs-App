@@ -1,5 +1,6 @@
 import { apiClient, idempotent } from '../client';
 import * as SQLite from 'expo-sqlite';
+import { newId } from '@/lib/id';
 
 export interface SaleItemInput {
   productId: string;
@@ -99,7 +100,7 @@ export const salesApi = {
           `INSERT INTO sale_items (id, saleId, productId, quantity, priceCents)
            VALUES (?, ?, ?, ?, ?)`,
           [
-            Math.random().toString(), // Local item ID mapping
+            newId(), // Local sale_item primary key
             input.id,
             item.productId,
             item.quantity,

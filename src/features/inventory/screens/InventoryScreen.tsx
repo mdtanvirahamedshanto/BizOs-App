@@ -11,6 +11,7 @@ import { useNetworkStore } from '@/lib/network/network.store';
 import { productsApi, Product, StockAdjustmentType } from '@/lib/api/modules/products.api';
 import { pullProducts } from '@/features/sync/pull-sync';
 import { useSyncStore } from '@/features/sync/sync.store';
+import { newId } from '@/lib/id';
 
 const ADJUST_TYPES: { type: StockAdjustmentType; bn: string; en: string }[] = [
   { type: 'IN', bn: 'স্টক জমা', en: 'Stock In' },
@@ -125,7 +126,7 @@ export function InventoryScreen() {
     setSaving(true);
     // Stable id reused for the online attempt and any offline retry so the
     // server applies this stock movement exactly once (idempotency key).
-    const adjustId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const adjustId = newId();
     try {
       // 1. Apply to local cache immediately (offline-first).
       await db.runAsync('UPDATE products SET stock = ?, lastUpdated = ? WHERE id = ?', [

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { useLanguageStore, t } from '@/utils/translation';
 import { useNetworkStore } from '@/lib/network/network.store';
+import { newId } from '@/lib/id';
 
 interface Customer {
   id: string;
@@ -159,7 +160,7 @@ export function KhataScreen() {
     setLoading(true);
     try {
       const payload: CollectionInput = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        id: newId(),
         customerId: selectedCustomer.id,
         accountId: selectedCustomer.khataAccountId, // backend khata account id
         amountCents: collectedCents,

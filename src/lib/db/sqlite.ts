@@ -101,6 +101,19 @@ export async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<voi
         isProcessing INTEGER NOT NULL DEFAULT 0, -- 1 = Lock for active upload
         createdAt INTEGER NOT NULL
       );
+
+      -- G. Sync Dead-letter Queue
+      -- Items the server permanently rejected (4xx). Kept (not silently deleted)
+      -- so the failure can be surfaced to the user and inspected/retried later.
+      CREATE TABLE IF NOT EXISTS sync_deadletter (
+        id TEXT PRIMARY KEY NOT NULL,
+        eventType TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        error TEXT,
+        statusCode INTEGER,
+        createdAt INTEGER NOT NULL,
+        failedAt INTEGER NOT NULL
+      );
     `);
 
     // 2b. Lightweight migrations for databases created by earlier versions.
@@ -120,7 +133,11 @@ export async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<voi
       CREATE INDEX IF NOT EXISTS idx_outbox_created ON sync_outbox(createdAt);
     `);
 
-    // 4. Seed initial mock data for demo if database is empty
+    // 4. Seed sample data for local development ONLY. Production builds must
+    // start empty and hydrate exclusively from the server (pull-sync). Demo
+    // rows use non-UUID ids and `isSynced=1`, which would otherwise corrupt
+    // dashboards/reports and break sync against the backend.
+    if (__DEV__) {
     const productCountRow = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM products');
     if (productCountRow && productCountRow.count === 0) {
       console.log('[SQLite] Seeding sample products...');
@@ -181,6 +198,7 @@ export async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<voi
          ('cb-mock-4', 'IN', 42000, 'POS Sale [sale-mock-2]', 'SALE', 'sale-mock-2', 1, ?)`,
         [now - 86400000, now - 18000000, now - 3600000, now - 7200000]
       );
+    }
     }
 
     console.log('[SQLite] Database initialized successfully.');

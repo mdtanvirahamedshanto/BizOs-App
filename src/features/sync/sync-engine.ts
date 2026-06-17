@@ -35,6 +35,11 @@ async function countPending(db: SQLite.SQLiteDatabase): Promise<number> {
   return row?.count ?? 0;
 }
 
+async function countFailed(db: SQLite.SQLiteDatabase): Promise<number> {
+  const row = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM sync_deadletter');
+  return row?.count ?? 0;
+}
+
 /**
  * Dispatches a single outbox payload to the matching backend route.
  * Returns true when the server accepted it (or when the item is unrecoverable
@@ -114,10 +119,15 @@ async function dispatch(db: SQLite.SQLiteDatabase, item: OutboxItem): Promise<bo
 function isPermanentFailure(err: unknown): boolean {
   if (axios.isAxiosError(err)) {
     const status = err.response?.status;
-    // No response → network/timeout → transient. 401 is handled by the
-    // refresh interceptor. 4xx (validation/not-found/conflict) → permanent.
+    // No response → network/timeout → transient. The following are also
+    // transient and must be retried (NOT dropped):
+    //   401 → handled by the refresh interceptor
+    //   408/429 → timeout / rate limit
+    //   409 → idempotency key still in-flight server-side (retry resolves it)
     if (status === undefined) return false;
-    return status >= 400 && status < 500 && status !== 401 && status !== 429;
+    if (status === 401 || status === 408 || status === 409 || status === 429) return false;
+    // Other 4xx (validation, not-found, etc.) → permanent.
+    return status >= 400 && status < 500;
   }
   return false;
 }
@@ -151,10 +161,18 @@ export async function processOutbox(db: SQLite.SQLiteDatabase): Promise<number> 
         ok = await dispatch(db, item);
       } catch (err) {
         if (isPermanentFailure(err)) {
-          // Poison message: drop it so it can't block the rest of the queue.
+          // Poison message: move it to the dead-letter queue (instead of
+          // silently dropping) so it can't block the rest of the outbox while
+          // still being surfaced to the user for inspection/retry.
+          const status = axios.isAxiosError(err) ? err.response?.status ?? null : null;
           console.warn(
-            `[SyncEngine] Dropping rejected ${item.eventType} (${item.id}):`,
+            `[SyncEngine] Dead-lettering rejected ${item.eventType} (${item.id}):`,
             (err as Error)?.message,
+          );
+          await db.runAsync(
+            `INSERT OR REPLACE INTO sync_deadletter (id, eventType, payload, error, statusCode, createdAt, failedAt)
+             SELECT id, eventType, payload, ?, ?, createdAt, ? FROM sync_outbox WHERE id = ?`,
+            [(err as Error)?.message ?? 'Unknown error', status, Date.now(), item.id],
           );
           await db.runAsync('DELETE FROM sync_outbox WHERE id = ?', [item.id]);
           processed += 1;
@@ -175,6 +193,7 @@ export async function processOutbox(db: SQLite.SQLiteDatabase): Promise<number> 
     }
   } finally {
     useSyncStore.getState().setPendingCount(await countPending(db));
+    useSyncStore.getState().setFailedCount(await countFailed(db));
     useSyncStore.getState().setSyncing(false);
   }
   return processed;
@@ -187,6 +206,13 @@ export async function processOutbox(db: SQLite.SQLiteDatabase): Promise<number> 
  */
 export async function syncAll(db: SQLite.SQLiteDatabase): Promise<void> {
   await processOutbox(db);
+
+  // Don't overwrite local cache while unsynced offline changes are still queued
+  // — a blind pull would clobber pending stock/due edits the user can see.
+  if ((await countPending(db)) > 0) {
+    return;
+  }
+
   try {
     await pullProducts(db);
   } catch (err) {
@@ -210,12 +236,14 @@ export function useAutoSync(): void {
   const isOnline = useNetworkStore((s) => s.isOnline);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const setPendingCount = useSyncStore((s) => s.setPendingCount);
+  const setFailedCount = useSyncStore((s) => s.setFailedCount);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Keep pending badge accurate even while offline.
+  // Keep pending/failed badges accurate even while offline.
   useEffect(() => {
     void countPending(db).then(setPendingCount);
-  }, [db, setPendingCount]);
+    void countFailed(db).then(setFailedCount);
+  }, [db, setPendingCount, setFailedCount]);
 
   // React to connectivity / auth transitions: push outbox + pull catalog.
   useEffect(() => {

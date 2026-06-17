@@ -15,9 +15,12 @@ interface NetworkState {
 
 export const useNetworkStore = create<NetworkState>((set) => ({
   isHydrated: false,
-  isConnected: true,
-  isInternetReachable: true,
-  isOnline: true,
+  // Assume offline until the first NetInfo result arrives. This prevents the
+  // app from firing API/sync requests on cold start before connectivity is
+  // actually known (which would otherwise fail and churn the outbox).
+  isConnected: false,
+  isInternetReachable: null,
+  isOnline: false,
   setStatus: (isConnected, isInternetReachable) => {
     // Treat "unknown reachability" (null) as online to avoid false offline flags.
     const isOnline = isConnected && isInternetReachable !== false;

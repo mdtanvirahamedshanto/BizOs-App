@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { t } from '@/utils/translation';
 import { useNetworkStore } from '@/lib/network/network.store';
+import { newId } from '@/lib/id';
 
 export function CashbookScreen() {
   const db = SQLite.useSQLiteContext();
@@ -63,7 +64,7 @@ export function CashbookScreen() {
     setLoading(true);
     try {
       const payload: CashbookEntryInput = {
-        id: Math.random().toString(),
+        id: newId(),
         amountCents: Math.round(amountVal * 100),
         description,
         reference: reference || undefined,
@@ -104,7 +105,7 @@ export function CashbookScreen() {
     setLoading(true);
     try {
       const payload: CashbookEntryInput = {
-        id: Math.random().toString(),
+        id: newId(),
         amountCents: Math.round(amountVal * 100),
         description,
         reference: reference || undefined,
