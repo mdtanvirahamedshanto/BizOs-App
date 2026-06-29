@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, ScrollView, Modal, Alert, TouchableOpacity, Linking, RefreshControl } from 'react-native';
 import * as SQLite from 'expo-sqlite';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { khataApi, CollectionInput } from '@/lib/api/modules/khata.api';
 import { pullCustomers } from '@/features/sync/pull-sync';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
-import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { Users, Truck, Scale, Search, UserPlus, FolderOpen, ChevronLeft, ChevronRight, UserCircle2 } from 'lucide-react-native';
 import { useLanguageStore, t } from '@/utils/translation';
 import { useNetworkStore } from '@/lib/network/network.store';
 import { newId } from '@/lib/id';
+import { Wifi, Bell, User } from 'lucide-react-native';
 
 interface Customer {
   id: string;
@@ -21,6 +23,7 @@ interface Customer {
 }
 
 export function KhataScreen() {
+  const insets = useSafeAreaInsets();
   const db = SQLite.useSQLiteContext();
   const { language } = useLanguageStore();
   const isBn = language === 'bn';
@@ -37,6 +40,9 @@ export function KhataScreen() {
   const [reference, setReference] = useState('');
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // UI Tabs
+  const [activeTab, setActiveTab] = useState<'summary' | 'customer' | 'supplier'>('summary');
 
   // Fetch customer ledgers from SQLite
   const loadCustomers = useCallback(async () => {
@@ -197,173 +203,101 @@ export function KhataScreen() {
 
   const totalOutstandingDueCents = customers.reduce((sum, c) => sum + c.dueCents, 0);
 
+  const [filterTab, setFilterTab] = useState<'all' | 'due' | 'paid'>('all');
+
   return (
-    <View style={{ flex: 1, backgroundColor: '#f8fafc' }}>
-      
-      {/* 1. Header Overview Summary Card */}
-      <View className="bg-slate-800 p-6 rounded-b-3xl border-b border-slate-700/40 items-center justify-center">
-        <Text className="text-[10px] text-slate-400 font-bold uppercase tracking-wider font-sans">
-          {isBn ? 'সর্বমোট পাওনা (Total Dues Outstanding)' : 'Total Outstanding Receivables'}
-        </Text>
-        <Text className="text-3xl font-black text-amber-500 font-sans mt-2">
-          ৳{(totalOutstandingDueCents / 100).toFixed(2)}
-        </Text>
+    <View style={{ flex: 1, backgroundColor: '#f1f5f9' }}>
+      {/* App Bar */}
+      <View style={{ paddingTop: Math.max(insets.top, 16) }} className="bg-white px-4 pb-3 flex-row items-center justify-between border-b border-slate-200">
+        <View className="flex-row items-center">
+          <View className="bg-[#7c3aed] w-8 h-8 rounded-lg items-center justify-center mr-2">
+            <Text className="text-white font-black text-lg font-sans">B</Text>
+          </View>
+          <Text className="text-xl font-black text-slate-800 tracking-tight font-sans">BizOS</Text>
+        </View>
+        <View className="flex-row items-center space-x-2">
+          <TouchableOpacity className="w-9 h-9 rounded-full border border-slate-200 items-center justify-center">
+            <Wifi size={16} color={isOnline ? "#10b981" : "#94a3b8"} />
+          </TouchableOpacity>
+          <TouchableOpacity className="w-9 h-9 rounded-full border border-slate-200 items-center justify-center">
+            <Bell size={16} color="#64748b" />
+          </TouchableOpacity>
+          <TouchableOpacity className="w-9 h-9 rounded-full border border-slate-200 items-center justify-center bg-purple-50">
+            <User size={16} color="#7c3aed" />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* 2. Search Input */}
-      <View style={{ padding: 16, backgroundColor: '#ffffff', borderBottomWidth: 1, borderBottomColor: '#cbd5e1' }}>
-        <Input
-          placeholder={isBn ? "গ্রাহকের নাম বা মোবাইল নম্বর খুঁজুন..." : "Search customer name or phone..."}
-          value={search}
-          onChangeText={setSearch}
-          onClear={() => setSearch('')}
-        />
-      </View>
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void handleRefresh()} />}>
+        
+        <View className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm mb-6">
+          <View className="flex-row items-center mb-1">
+            <Users size={24} color="#7c3aed" className="mr-2" />
+            <Text className="text-xl font-black text-slate-800 font-sans tracking-tight">গ্রাহক ও বাকির খাতা</Text>
+          </View>
+          <Text className="text-[11px] font-semibold text-slate-500 font-sans mb-4 ml-8">Customer List & Dues Directory</Text>
 
-      {/* 3. Customer Debtors List */}
-      <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void handleRefresh()} />}
-      >
-        {customers.length === 0 ? (
-          <Text className="text-center text-xs text-slate-450 mt-8 font-sans">
-            {isBn ? 'কোনো বাকি কাস্টমার রেকর্ড পাওয়া যায়নি' : 'No due records found'}
-          </Text>
-        ) : (
-          customers.map((customer) => (
-            <Card key={customer.id} style={{ marginBottom: 12 }} className="border-slate-200/50">
-              <View className="flex-row justify-between items-start mb-2">
-                <View className="flex-1 pr-3">
-                  <Text className="text-sm font-black text-slate-800 font-sans">{customer.name}</Text>
-                  {customer.phone && (
-                    <Text className="text-xs text-slate-450 font-semibold font-mono mt-0.5">{customer.phone}</Text>
-                  )}
-                  {customer.creditLimitCents > 0 && (
-                    <Text className="text-[9px] text-slate-400 font-semibold font-sans mt-1">
-                      {isBn ? 'সীমা: ' : 'Limit: '} ৳{(customer.creditLimitCents / 100).toFixed(0)}
-                    </Text>
-                  )}
-                </View>
-                <View className="items-end">
-                  <Text className="text-sm font-black text-amber-700 font-sans">
-                    ৳{(customer.dueCents / 100).toFixed(2)}
-                  </Text>
-                  <Badge
-                    label={customer.dueCents > customer.creditLimitCents && customer.creditLimitCents > 0 ? (isBn ? 'সীমা অতিক্রম' : 'Over Limit') : (isBn ? 'বাকি' : 'Due')}
-                    variant={customer.dueCents > customer.creditLimitCents && customer.creditLimitCents > 0 ? 'destructive' : 'warning'}
-                  />
-                </View>
-              </View>
+          <TouchableOpacity className="bg-[#7c3aed] rounded-lg py-3 px-4 flex-row items-center justify-center self-start mb-6">
+            <UserPlus size={16} color="#ffffff" className="mr-2" />
+            <Text className="text-white font-bold font-sans text-sm">নতুন গ্রাহক যোগ</Text>
+          </TouchableOpacity>
 
-              {/* Action Operations Panel */}
-              <View className="flex-row mt-2 border-t border-slate-100 pt-2 space-x-2 justify-end">
-                <TouchableOpacity
-                  onPress={() => void sendDueReminder(customer)}
-                  activeOpacity={0.8}
-                  className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2 flex-row items-center justify-center mr-2"
-                >
-                  <Text className="text-emerald-700 text-xs font-black font-sans">
-                    💬 {isBn ? 'রিমাইন্ডার' : 'Reminder'}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={() => {
-                    setSelectedCustomer(customer);
-                    setShowCollectModal(true);
-                  }}
-                  activeOpacity={0.8}
-                  className="bg-primary rounded-lg px-4 py-2 flex-row items-center justify-center"
-                >
-                  <Text className="text-white text-xs font-black font-sans">
-                    ৳ {isBn ? 'বাকি আদায়' : 'Collect'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </Card>
-          ))
-        )}
-      </ScrollView>
-
-      {/* ======================================================== */}
-      {/* Due Collection Modal */}
-      {/* ======================================================== */}
-      <Modal visible={showCollectModal} transparent animationType="slide">
-        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(15,23,42,0.6)' }}>
-          <View className="bg-white rounded-t-3xl p-6 border-t border-slate-100 space-y-4">
-            <Text className="text-sm font-black text-slate-800 border-b border-slate-100 pb-3 font-sans">
-              {isBn 
-                ? `বাকি সংগ্রহ - ${selectedCustomer?.name || ''}`
-                : `Collect Due - ${selectedCustomer?.name || ''}`}
-            </Text>
-
-            <Input 
-              label={isBn ? 'আদায়ের পরিমাণ (৳)' : 'Collected Amount (৳)'} 
-              keyboardType="numeric" 
-              value={amount} 
-              onChangeText={setAmount} 
-            />
-
-            {/* Payment Method Picker */}
-            <View>
-              <Text className="text-xs font-bold text-slate-500 font-sans mb-2">
-                {isBn ? 'পেমেন্ট মাধ্যম' : 'Payment Method'}
-              </Text>
-              <View className="flex-row space-x-2">
-                {(['CASH', 'MFS', 'BANK'] as const).map((method) => (
-                  <TouchableOpacity
-                    key={method}
-                    onPress={() => setPaymentMethod(method)}
-                    activeOpacity={0.8}
-                    className={`flex-1 items-center justify-center py-2.5 rounded-xl border ${
-                      paymentMethod === method 
-                        ? 'bg-primary-50 border-primary' 
-                        : 'bg-white border-slate-200'
-                    } mr-2`}
-                  >
-                    <Text className={`text-xs font-extrabold font-sans ${
-                      paymentMethod === method ? 'text-primary' : 'text-slate-500'
-                    }`}>
-                      {method === 'CASH' ? (isBn ? 'নগদ' : 'Cash') : method === 'MFS' ? (isBn ? 'মোবাইল' : 'MFS') : (isBn ? 'ব্যাংক' : 'Bank')}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+          <View className="border-t border-slate-100 pt-5 mb-4">
+            <View className="flex-row items-center border border-slate-200 rounded-lg px-3 h-12 mb-4">
+              <Search size={18} color="#94a3b8" />
+              <Input
+                placeholder="নাম বা মোবাইল নম্বর দিয়ে খুঁজুন..."
+                value={search}
+                onChangeText={setSearch}
+                onClear={() => setSearch('')}
+                className="flex-1 border-0 bg-transparent mb-0 px-2 font-sans"
+              />
             </View>
 
-            <Input 
-              label={isBn ? 'রেফারেন্স / ভাউচার নম্বর (ঐচ্ছিক)' : 'Reference / Voucher No. (Optional)'} 
-              placeholder={isBn ? 'যেমন: বিকাশ ট্রানজেকশন আইডি' : 'e.g. Transaction ID'} 
-              value={reference} 
-              onChangeText={setReference} 
-            />
-
-            <View className="flex-row justify-between pt-2">
-              <TouchableOpacity 
-                onPress={() => {
-                  setShowCollectModal(false);
-                  setSelectedCustomer(null);
-                  setAmount('');
-                  setReference('');
-                }} 
-                className="px-5 py-3 rounded-xl bg-slate-100 active:bg-slate-200"
-              >
-                <Text className="text-slate-600 text-xs font-bold font-sans">
-                  {isBn ? 'বাতিল' : 'Cancel'}
-                </Text>
+            <View className="flex-row items-center border border-slate-200 rounded-lg p-0.5 self-start mb-6">
+              <TouchableOpacity onPress={() => setFilterTab('all')} className={`px-4 py-2 rounded-md ${filterTab === 'all' ? 'bg-white shadow-sm' : ''}`}>
+                <Text className={`text-xs font-bold font-sans ${filterTab === 'all' ? 'text-slate-800' : 'text-slate-500'}`}>সবাই</Text>
               </TouchableOpacity>
-              <View className="flex-1 ml-4">
-                <Button 
-                  label={isBn ? 'দাখিল করুন' : 'Submit'} 
-                  onPress={handleCollectDue} 
-                  loading={loading} 
-                />
+              <TouchableOpacity onPress={() => setFilterTab('due')} className={`px-4 py-2 rounded-md ${filterTab === 'due' ? 'bg-white shadow-sm' : ''}`}>
+                <Text className={`text-xs font-bold font-sans ${filterTab === 'due' ? 'text-slate-800' : 'text-slate-500'}`}>বাকি আছে</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setFilterTab('paid')} className={`px-4 py-2 rounded-md ${filterTab === 'paid' ? 'bg-white shadow-sm' : ''}`}>
+                <Text className={`text-xs font-bold font-sans ${filterTab === 'paid' ? 'text-slate-800' : 'text-slate-500'}`}>পরিশোধিত</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View className="border border-dashed border-slate-200 rounded-xl py-12 items-center justify-center bg-slate-50 mb-6">
+              <FolderOpen size={40} color="#cbd5e1" className="mb-3" />
+              <Text className="text-slate-500 font-bold font-sans text-sm">কোনো গ্রাহকের হিসাব খুঁজে পাওয়া যায়নি।</Text>
+            </View>
+
+            <View className="flex-row items-center justify-between border-t border-slate-100 pt-4">
+              <Text className="text-xs text-slate-500 font-sans font-semibold">মোট গ্রাহক: ০ • দেখানো: ০</Text>
+              <View className="flex-row">
+                <TouchableOpacity className="border border-slate-200 rounded-md px-3 py-1.5 flex-row items-center mr-2 opacity-50" disabled>
+                  <ChevronLeft size={14} color="#94a3b8" />
+                  <Text className="text-slate-400 font-bold font-sans text-[11px] ml-1">পূর্ববর্তী</Text>
+                </TouchableOpacity>
+                <TouchableOpacity className="border border-slate-200 rounded-md px-3 py-1.5 flex-row items-center opacity-50" disabled>
+                  <Text className="text-slate-400 font-bold font-sans text-[11px] mr-1">পরবর্তী</Text>
+                  <ChevronRight size={14} color="#94a3b8" />
+                </TouchableOpacity>
               </View>
             </View>
           </View>
         </View>
-      </Modal>
 
+        <View className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm items-center justify-center py-16">
+          <View className="w-16 h-16 rounded-full bg-slate-100 items-center justify-center mb-4">
+            <UserCircle2 size={32} color="#94a3b8" />
+          </View>
+          <Text className="text-lg font-black text-slate-800 font-sans mb-2">গ্রাহক হিসাব নির্বাচন করুন</Text>
+          <Text className="text-slate-500 text-center font-sans text-xs leading-relaxed px-4">
+            বাম পাশের তালিকা থেকে যেকোনো কাস্টমারের{'\n'}নামের পাশে চাপ দিলে তাদের লেনদেন ইতিহাস{'\n'}ও বকেয়া এন্ট্রি করা যাবে।
+          </Text>
+        </View>
+
+      </ScrollView>
     </View>
   );
 }

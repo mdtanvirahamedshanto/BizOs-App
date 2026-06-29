@@ -79,6 +79,25 @@ export const productsApi = {
     return response.data;
   },
 
+  createProduct: async (
+    data: {
+      name: string;
+      sku: string;
+      barcode?: string | null;
+      sellPriceCents: number;
+      costPriceCents?: number;
+      stockQuantity: number;
+    },
+    idempotencyKey?: string,
+  ): Promise<{ success: boolean; data: BackendProduct }> => {
+    const response = await apiClient.post<{ success: boolean; data: BackendProduct }>(
+      '/products',
+      data,
+      idempotencyKey ? idempotent(idempotencyKey) : undefined,
+    );
+    return response.data;
+  },
+
   /**
    * Record a stock movement (IN/OUT/ADJUSTMENT/DAMAGE) on the backend.
    * Pass a stable `idempotencyKey` (the local adjustment id) so a retried

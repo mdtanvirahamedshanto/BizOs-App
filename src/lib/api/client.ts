@@ -150,3 +150,17 @@ export const queryClient = new QueryClient({
     },
   },
 });
+
+export function buildParams(params?: object): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!params) return result;
+  Object.entries(params as Record<string, unknown>).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    if (value instanceof Date) {
+      result[key] = value.toISOString();
+    } else {
+      result[key] = String(value as string | number | boolean);
+    }
+  });
+  return result;
+}

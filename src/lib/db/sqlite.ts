@@ -81,6 +81,52 @@ export async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<voi
         FOREIGN KEY(productId) REFERENCES products(id)
       );
 
+      -- E. Purchases Record
+      CREATE TABLE IF NOT EXISTS purchases (
+        id TEXT PRIMARY KEY NOT NULL,
+        supplierId TEXT,
+        referenceNumber TEXT NOT NULL,
+        totalCents INTEGER NOT NULL,
+        taxCents INTEGER NOT NULL DEFAULT 0,
+        discountCents INTEGER NOT NULL DEFAULT 0,
+        paymentStatus TEXT NOT NULL, -- 'PAID' | 'DUE' | 'PARTIAL'
+        isSynced INTEGER NOT NULL DEFAULT 0,
+        createdAt INTEGER NOT NULL
+      );
+
+      -- F. Purchase Item Record
+      CREATE TABLE IF NOT EXISTS purchase_items (
+        id TEXT PRIMARY KEY NOT NULL,
+        purchaseId TEXT NOT NULL,
+        productId TEXT NOT NULL,
+        quantity INTEGER NOT NULL,
+        unitCostCents INTEGER NOT NULL,
+        FOREIGN KEY(purchaseId) REFERENCES purchases(id) ON DELETE CASCADE,
+        FOREIGN KEY(productId) REFERENCES products(id)
+      );
+
+      -- G. Expense Categories
+      CREATE TABLE IF NOT EXISTS expense_categories (
+        id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL,
+        color TEXT,
+        icon TEXT,
+        lastUpdated INTEGER NOT NULL DEFAULT 0
+      );
+
+      -- H. Expenses Record
+      CREATE TABLE IF NOT EXISTS expenses (
+        id TEXT PRIMARY KEY NOT NULL,
+        categoryId TEXT,
+        title TEXT NOT NULL,
+        description TEXT,
+        amountCents INTEGER NOT NULL,
+        paymentMethod TEXT,
+        isSynced INTEGER NOT NULL DEFAULT 0,
+        createdAt INTEGER NOT NULL,
+        FOREIGN KEY(categoryId) REFERENCES expense_categories(id)
+      );
+
       -- E. Cashbook Registry Table
       CREATE TABLE IF NOT EXISTS cashbook_entries (
         id TEXT PRIMARY KEY NOT NULL,
@@ -197,6 +243,42 @@ export async function initializeDatabase(db: SQLite.SQLiteDatabase): Promise<voi
          ('cb-mock-3', 'IN', 25000, 'POS Sale [sale-mock-1]', 'SALE', 'sale-mock-1', 1, ?),
          ('cb-mock-4', 'IN', 42000, 'POS Sale [sale-mock-2]', 'SALE', 'sale-mock-2', 1, ?)`,
         [now - 86400000, now - 18000000, now - 3600000, now - 7200000]
+      );
+    }
+
+    const purchasesCountRow = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM purchases');
+    if (purchasesCountRow && purchasesCountRow.count === 0) {
+      console.log('[SQLite] Seeding sample purchases...');
+      const now = Date.now();
+      await db.runAsync(
+        `INSERT INTO purchases (id, supplierId, referenceNumber, totalCents, taxCents, discountCents, paymentStatus, isSynced, createdAt) VALUES
+         ('purch-mock-1', NULL, 'INV-2023-001', 150000, 0, 0, 'PAID', 1, ?),
+         ('purch-mock-2', NULL, 'INV-2023-002', 32000, 0, 0, 'DUE', 1, ?)`,
+        [now - 5000000, now - 10000000]
+      );
+    }
+
+    const expCatCountRow = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM expense_categories');
+    if (expCatCountRow && expCatCountRow.count === 0) {
+      console.log('[SQLite] Seeding sample expense categories...');
+      await db.runAsync(`
+        INSERT INTO expense_categories (id, name, color, icon, lastUpdated) VALUES
+        ('cat-1', 'দোকান ভাড়া / Rent', '#eab308', 'home', 0),
+        ('cat-2', 'বিদ্যুৎ বিল / Electricity', '#3b82f6', 'zap', 0),
+        ('cat-3', 'যাতায়াত / Transport', '#10b981', 'truck', 0),
+        ('cat-4', 'আপ্যায়ন / Entertainment', '#f43f5e', 'coffee', 0)
+      `);
+    }
+
+    const expCountRow = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM expenses');
+    if (expCountRow && expCountRow.count === 0) {
+      console.log('[SQLite] Seeding sample expenses...');
+      const now = Date.now();
+      await db.runAsync(
+        `INSERT INTO expenses (id, categoryId, title, description, amountCents, paymentMethod, isSynced, createdAt) VALUES
+         ('exp-mock-1', 'cat-1', 'Shop Rent July', 'Paid to landlord', 120000, 'CASH', 1, ?),
+         ('exp-mock-2', 'cat-2', 'Electricity Bill', 'For last month', 25000, 'MFS', 1, ?)`,
+        [now - 18000000, now - 1200000]
       );
     }
     }

@@ -39,7 +39,8 @@
         {
           "cameraPermission": "BizOS uses the camera to scan product barcodes at checkout."
         }
-      ]
+      ],
+      "expo-sqlite"
     ]
   }
 }
